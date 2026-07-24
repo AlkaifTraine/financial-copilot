@@ -1,0 +1,72 @@
+# CI/CD: on every push to main, run the tests, then deploy to the EC2 instance.
+#
+# The deploy step opens an SSH session to the instance, pulls the new code,
+# installs any changed dependencies, and restarts the service. Because the
+# secrets live in a file on the instance (not in the repo), a pull never
+# disturbs them and the app comes back up with the same configuration.
+#
+# Repository secrets required (Settings -> Secrets and variables -> Actions):
+#   EC2_HOST      public IP or DNS of the instance
+#   EC2_USER      ssh user, normally "ubuntu"
+#   EC2_SSH_KEY   contents of the instance's private key (.pem file)
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}      # allow manual runs from the Actions tab
+
+concurrency:
+  # A newer push supersedes an in-flight deploy rather than racing it.
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run the valuation test suite
+        # These are pure, offline unit tests - no API key needed. A failure here
+        # blocks the deploy, so broken arithmetic never reaches the live site.
+        run: pytest tests/ -q
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          # Write the key to a file with correct permissions, and pin the host
+          # key on first contact so the connection is not silently MITM-able.
+          mkdir -p ~/.ssh
+          printf '%s' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" bash -s <<'REMOTE'
+            set -euo pipefail
+            cd ~/financial-copilot
+            git fetch --all
+            git reset --hard origin/main
+            ./venv/bin/pip install -q -r requirements.txt
+            sudo systemctl restart financial-copilot
+            echo "Deployed $(git rev-parse --short HEAD) at $(date -u)"
+          REMOTE

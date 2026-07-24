@@ -1,0 +1,16 @@
+[theme]
+# Matches the report's palette so the app and the generated document read as
+# one product rather than two.
+primaryColor = "#2a78d6"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f8fa"
+textColor = "#14181f"
+font = "sans serif"
+
+[server]
+# Filings are large; the default 200MB cap is generous but explicit here.
+maxUploadSize = 50
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false

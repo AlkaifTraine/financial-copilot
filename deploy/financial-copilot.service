@@ -1,0 +1,31 @@
+# systemd unit that keeps the Streamlit app running and restarts it on crash
+# or reboot. Installed to /etc/systemd/system/ by deploy/setup.sh.
+#
+# Secrets (OPENAI_API_KEY, SEC_USER_AGENT, DEMO_MODE) are read from an
+# EnvironmentFile that lives outside the repo, so they are never committed and
+# survive a `git pull`.
+
+[Unit]
+Description=Financial Copilot (Streamlit)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/financial-copilot
+EnvironmentFile=/home/ubuntu/financial-copilot.env
+ExecStart=/home/ubuntu/financial-copilot/venv/bin/streamlit run app.py \
+    --server.port 8501 \
+    --server.address 127.0.0.1 \
+    --server.headless true \
+    --server.enableCORS false \
+    --server.enableXsrfProtection true \
+    --browser.gatherUsageStats false
+Restart=always
+RestartSec=5
+
+# Give the process room; a large filing parse is the memory peak.
+MemoryHigh=900M
+
+[Install]
+WantedBy=multi-user.target

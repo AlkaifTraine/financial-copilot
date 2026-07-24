@@ -1,0 +1,309 @@
+<style>
+  :root {
+    --navy: #0f2942;
+    --accent: #2a78d6;
+    --positive: #137333;
+    --negative: #b3261e;
+    --ink: #14181f;
+    --ink-2: #4a5460;
+    --muted: #7c8794;
+    --rule: #e3e7ec;
+    --surface: #ffffff;
+    --surface-2: #f6f8fa;
+  }
+
+  .fc-report {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--surface);
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 28px 32px 56px;
+    line-height: 1.55;
+    font-size: 14px;
+  }
+  .fc-report * { box-sizing: border-box; }
+
+  /* ---- masthead ---- */
+  .fc-masthead {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 24px; border-bottom: 3px solid var(--navy); padding-bottom: 16px;
+  }
+  .fc-company { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; color: var(--navy); }
+  .fc-ident { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .fc-rating {
+    text-align: center; min-width: 132px; padding: 10px 16px; border-radius: 8px;
+    color: #fff; background: var(--muted);
+  }
+  .fc-rating.positive { background: var(--positive); }
+  .fc-rating.negative { background: var(--negative); }
+  .fc-rating .label { font-size: 22px; font-weight: 700; letter-spacing: 0.04em; }
+  .fc-rating .sub { font-size: 11px; opacity: 0.9; }
+
+  /* ---- verdict ---- */
+  .fc-verdict {
+    display: flex; flex-wrap: wrap; gap: 28px; margin: 18px 0 4px;
+    padding: 14px 18px; background: var(--surface-2); border-radius: 8px;
+  }
+  .fc-verdict div span { display: block; }
+  .fc-verdict .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+  .fc-verdict .v { font-size: 19px; font-weight: 620; font-variant-numeric: tabular-nums; }
+  .v.positive { color: var(--positive); }
+  .v.negative { color: var(--negative); }
+
+  /* ---- kpi strip ---- */
+  .fc-kpis { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0 26px; }
+  .fc-kpi {
+    flex: 1 1 150px; border: 1px solid var(--rule); border-radius: 8px;
+    padding: 11px 13px; background: var(--surface);
+  }
+  .fc-kpi .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .fc-kpi .value { font-size: 18px; font-weight: 620; margin-top: 3px; }
+  .fc-kpi .caption { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
+
+  /* ---- sections ---- */
+  h2.fc-h {
+    font-size: 15px; text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--navy); border-bottom: 1px solid var(--rule);
+    padding-bottom: 6px; margin: 30px 0 12px;
+  }
+  .fc-standfirst { font-size: 15px; color: var(--ink-2); font-style: italic; margin-bottom: 10px; }
+  .fc-report p { margin: 0 0 10px; }
+  .fc-bullets { margin: 8px 0 0; padding-left: 18px; }
+  .fc-bullets li { margin-bottom: 5px; }
+
+  /* ---- tables ---- */
+  table.fc-t { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0 4px; }
+  table.fc-t th {
+    text-align: right; font-weight: 600; color: var(--ink-2); background: var(--surface-2);
+    padding: 7px 9px; border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  table.fc-t th:first-child, table.fc-t td:first-child { text-align: left; }
+  table.fc-t td {
+    text-align: right; padding: 6px 9px; border-bottom: 1px solid var(--rule);
+    font-variant-numeric: tabular-nums;
+  }
+  table.fc-t tr:last-child td { border-bottom: none; }
+  .fc-scroll { overflow-x: auto; }
+
+  /* ---- assumptions ---- */
+  .fc-assumption { border-bottom: 1px solid var(--rule); padding: 9px 0; }
+  .fc-assumption:last-child { border-bottom: none; }
+  .fc-assumption .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .fc-assumption .name { font-weight: 600; }
+  .fc-assumption .val { font-variant-numeric: tabular-nums; font-weight: 620; white-space: nowrap; }
+  .fc-assumption .meta { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .fc-assumption .why { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .fc-tag {
+    display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 1px 6px; border-radius: 3px; background: var(--surface-2); color: var(--ink-2);
+    border: 1px solid var(--rule); margin-left: 6px;
+  }
+  .fc-tag.clamped { background: #fff4e5; border-color: #f0d0a0; color: #8a5300; }
+
+  /* ---- misc ---- */
+  .fc-chart { margin: 14px 0; }
+  .fc-chart img { width: 100%; height: auto; display: block; }
+  .fc-note {
+    background: var(--surface-2); border-left: 3px solid var(--accent);
+    padding: 10px 14px; margin: 12px 0; font-size: 12.5px; color: var(--ink-2);
+  }
+  .fc-sources li { margin-bottom: 6px; font-size: 12.5px; }
+  .fc-sources a { color: var(--accent); word-break: break-all; }
+  .fc-evidence { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
+  .fc-disclaimer {
+    margin-top: 34px; padding-top: 14px; border-top: 1px solid var(--rule);
+    font-size: 11px; color: var(--muted);
+  }
+  @media print { .fc-report { max-width: none; padding: 0; } h2.fc-h { break-after: avoid; } }
+</style>
+
+<div class="fc-report">
+
+  <div class="fc-masthead">
+    <div>
+      <div class="fc-company">{{ r.company_name }}</div>
+      <div class="fc-ident">
+        {{ r.ticker }}{% if r.exchange %} · {{ r.exchange }}{% endif %}
+        {%- if r.sector %} · {{ r.sector }}{% endif %} · {{ r.as_of }}
+      </div>
+    </div>
+    <div class="fc-rating {{ r.rating_tone }}">
+      <div class="label">{{ r.rating }}</div>
+      <div class="sub">DCF-derived</div>
+    </div>
+  </div>
+
+  <div class="fc-verdict">
+    <div><span class="k">Market price</span><span class="v">{{ fmt_price(r.share_price) }}</span></div>
+    <div><span class="k">DCF fair value</span><span class="v">{{ fmt_price(r.fair_value) }}</span></div>
+    <div><span class="k">Upside</span><span class="v {{ 'positive' if (r.upside or 0) > 0 else 'negative' }}">{{ r.upside_display }}</span></div>
+    {% if r.market_implied_growth is not none %}
+    <div><span class="k">Growth priced in</span><span class="v">{{ pct(r.market_implied_growth) }} p.a.</span></div>
+    {% endif %}
+  </div>
+
+  {% if r.kpis %}
+  <div class="fc-kpis">
+    {% for k in r.kpis %}
+    <div class="fc-kpi">
+      <div class="label">{{ k.label }}</div>
+      <div class="value">{{ k.value }}</div>
+      {% if k.caption %}<div class="caption">{{ k.caption }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if r.market_implied_growth is not none and r.share_price %}
+  <div class="fc-note">
+    <strong>Reading the valuation.</strong> The discounted cash flow model values
+    {{ r.ticker }} at {{ fmt_price(r.fair_value) }} against a market price of
+    {{ fmt_price(r.share_price) }}. Holding every other assumption fixed, today's price
+    implies first-year revenue growth of about {{ pct(r.market_implied_growth) }}, decaying
+    toward the terminal rate. Judge that figure against the reported history below rather
+    than treating the rating as a forecast.
+  </div>
+  {% endif %}
+
+  {# ---- narrative sections ---- #}
+  {% for s in r.sections %}
+  <h2 class="fc-h">{{ s.title }}</h2>
+  {% if s.summary %}<div class="fc-standfirst">{{ s.summary }}</div>{% endif %}
+  {% for p in s.paragraphs %}<p>{{ p }}</p>{% endfor %}
+  {% if s.bullets %}
+  <ul class="fc-bullets">{% for b in s.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if s.evidence %}
+  <div class="fc-evidence">
+    <strong>Sources cited above.</strong>
+    {% for e in s.evidence %}<br>[{{ loop.index }}] {{ e.label }}{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if s.key == 'financials' %}
+    {% if r.charts.revenue %}<div class="fc-chart"><img src="{{ r.charts.revenue }}" alt="Revenue reported and forecast"></div>{% endif %}
+    {% if r.charts.margin %}<div class="fc-chart"><img src="{{ r.charts.margin }}" alt="Operating margin"></div>{% endif %}
+    {% if r.charts.fcf %}<div class="fc-chart"><img src="{{ r.charts.fcf }}" alt="Free cash flow"></div>{% endif %}
+
+    {% if r.financial_table %}
+    <div class="fc-scroll"><table class="fc-t">
+      <thead><tr>
+        <th>Fiscal year</th><th>Revenue</th><th>Growth</th><th>Operating income</th>
+        <th>Op. margin</th><th>Net income</th><th>Free cash flow</th>
+      </tr></thead>
+      <tbody>
+      {% for row in r.financial_table %}
+        <tr>
+          <td>{{ row.fiscal_year }}</td>
+          <td>{{ money(row.revenue) }}</td>
+          <td>{{ pct(row.revenue_growth) }}</td>
+          <td>{{ money(row.operating_income) }}</td>
+          <td>{{ pct(row.operating_margin) }}</td>
+          <td>{{ money(row.net_income) }}</td>
+          <td>{{ money(row.free_cash_flow) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <div class="fc-evidence">Figures in {{ r.currency }}. Source: company filings.</div>
+    {% endif %}
+  {% endif %}
+  {% endfor %}
+
+  {# ---- valuation ---- #}
+  {% if r.forecast_table %}
+  <h2 class="fc-h">Discounted Cash Flow</h2>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr>
+      <th>Year</th><th>Revenue</th><th>Growth</th><th>Op. margin</th>
+      <th>Free cash flow</th><th>Present value</th>
+    </tr></thead>
+    <tbody>
+    {% for row in r.forecast_table %}
+      <tr>
+        <td>{{ row.year }}</td>
+        <td>{{ money(row.revenue) }}</td>
+        <td>{{ pct(row.revenue_growth) }}</td>
+        <td>{{ pct(row.operating_margin) }}</td>
+        <td>{{ money(row.free_cash_flow) }}</td>
+        <td>{{ money(row.present_value) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+
+  {% if r.assumptions %}
+  <h2 class="fc-h">Assumptions</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    Every input to the model, how it was derived, and why. Inputs marked
+    <em>bounded</em> were proposed by the language model and constrained to a range
+    supported by the company's reported history before entering the calculation.
+  </p>
+  {% for a in r.assumptions %}
+  <div class="fc-assumption">
+    <div class="top">
+      <span class="name">{{ a.label }}<span class="fc-tag">{{ a.source_label }}</span>{% if a.clamped %}<span class="fc-tag clamped">bounded</span>{% endif %}</span>
+      <span class="val">{{ a.display }}</span>
+    </div>
+    <div class="meta">{{ a.derivation }}</div>
+    {% if a.rationale %}<div class="why">{{ a.rationale }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if r.charts.sensitivity %}
+  <h2 class="fc-h">Sensitivity</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    Fair value per share across the discount rate and the terminal growth rate — the two
+    assumptions that move a DCF most. Cells above the current market price are shown in blue,
+    below in red.
+  </p>
+  <div class="fc-chart"><img src="{{ r.charts.sensitivity }}" alt="Fair value sensitivity"></div>
+  {% endif %}
+
+  {% if r.comps and r.comps.peers %}
+  <h2 class="fc-h">Comparable Companies</h2>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr><th>Company</th><th>Market cap</th><th>P/E</th><th>EV/EBITDA</th><th>EV/Sales</th></tr></thead>
+    <tbody>
+    {% for p in r.comps.peers %}
+      <tr>
+        <td>{{ p.name }} <span style="color:var(--muted)">{{ p.ticker }}</span></td>
+        <td>{{ money(p.market_cap) }}</td>
+        <td>{{ num(p.pe) }}</td>
+        <td>{{ num(p.ev_to_ebitda) }}</td>
+        <td>{{ num(p.ev_to_sales) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% for n in r.comps.notes %}<div class="fc-evidence">{{ n }}</div>{% endfor %}
+  {% endif %}
+
+  {% if r.warnings %}
+  <h2 class="fc-h">Model Notes and Limitations</h2>
+  <ul class="fc-bullets">{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if r.sources %}
+  <h2 class="fc-h">Source Documents</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    Every statement in this report is drawn from the documents below. Each link points to
+    the original filing.
+  </p>
+  <ul class="fc-sources">
+    {% for s in r.sources %}
+    <li>
+      <strong>{{ s.label }}</strong>
+      {% if s.filed %}<span style="color:var(--muted)"> · filed {{ s.filed }}</span>{% endif %}
+      {% if s.origin == 'sec_edgar' %}<span class="fc-tag">SEC EDGAR</span>{% endif %}
+      <br><a href="{{ s.url }}">{{ s.url }}</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <div class="fc-disclaimer">{{ r.disclaimer }}</div>
+</div>

@@ -1,0 +1,47 @@
+# ---- Python ----
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# ---- Secrets ----
+.env
+.streamlit/secrets.toml
+
+# ---- Generated artifacts ----
+# Downloaded filings are large (10-50MB each) and re-fetchable from source.
+data/
+vector_db/
+.cache/
+charts/
+
+# Generated reports, EXCEPT the committed sample used as a portfolio artifact.
+reports/*
+!reports/.gitkeep
+!reports/SAMPLE_*.pdf
+!reports/SAMPLE_*.html
+
+# ---- Pre-rewrite code ----
+# The original prototype, superseded by the fincopilot/ package. Kept on disk
+# for reference but excluded from the public repo so it does not confuse a
+# reader. Delete these locally whenever you like.
+/tools/
+/utils/
+/backend/
+/main.py
+/test_fetcher.py
+/prompts/
+/retrieval/
+/legacy/
+
+# ---- Local tooling ----
+.claude/
+
+# ---- OS / editors ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
