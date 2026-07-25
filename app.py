@@ -171,6 +171,12 @@ def render_search(*, key: str) -> None:
     if submitted:
         if query.strip():
             load_company(query.strip(), refresh=refresh)
+            # load_company populates session state. Rerun so the freshly loaded
+            # company renders its dashboard: the landing page (where this search
+            # lives) ends in st.stop(), so without a rerun the script halts here
+            # and the user is left staring at a completed status on the landing
+            # screen instead of advancing to the results.
+            st.rerun()
         else:
             st.warning("Enter a company name or ticker.")
 
