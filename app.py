@@ -24,7 +24,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from fincopilot import config
+from fincopilot import config, ui
 from fincopilot.ratelimit import RateLimitExceeded, enforce
 from fincopilot.chat import ask
 from fincopilot.fundamentals import load_financials
@@ -42,6 +42,8 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+ui.inject_css()
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +154,7 @@ def load_company(query: str, *, refresh: bool = False) -> None:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("📊 Financial Copilot")
+    ui.sidebar_brand()
     st.caption("Equity research from primary filings, with citations you can check.")
 
     query = st.text_input(
@@ -207,25 +209,29 @@ if st.session_state["load_error"]:
     st.error(st.session_state["load_error"])
 
 if not st.session_state["index"]:
-    st.title("Financial Copilot")
-    st.markdown(
-        """
-Enter a company in the sidebar to begin. The pipeline will:
-
-1. **Resolve** the name to a ticker, exchange and SEC CIK
-2. **Fetch** its filings — EDGAR for US issuers, investor-relations sites otherwise
-3. **Validate** each document and discard anything irrelevant, duplicated or unreadable
-4. **Index** the text with structure-aware chunking, then hybrid dense + sparse retrieval
-5. **Value** the company with a discounted cash flow model built on audited XBRL data
-
-You can then ask questions with verifiable citations, inspect every valuation
-assumption, and generate a full research report.
-        """
+    ui.hero(
+        title="Read the filings. Value the company. Cite every number.",
+        subtitle=(
+            "Enter a company and Financial Copilot fetches its SEC filings, answers "
+            "questions with verifiable citations, and builds a discounted-cash-flow "
+            "valuation where every assumption is stated and justified."
+        ),
     )
+
+    st.markdown("<div style='height:26px'></div>", unsafe_allow_html=True)
+    ui.feature_grid([
+        ("🔎", "Grounded answers", "Every response cites the exact document, section and page — open the source and check it yourself."),
+        ("🧩", "Advanced retrieval", "Table-aware chunking, hybrid dense + sparse search, reranking. Not tutorial RAG."),
+        ("🧮", "Real valuation", "Deterministic DCF on audited XBRL data. The model proposes assumptions; the math is never left to it."),
+        ("📄", "One-click report", "A full equity research document — analysis, valuation, sensitivity, sources — as HTML and PDF."),
+    ])
+
+    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
     st.info(
-        "First load of a large company takes a few minutes — filings are downloaded, "
-        "parsed and embedded. Subsequent loads are instant from cache.",
-        icon="⏱️",
+        "Enter a company in the sidebar to begin (try **NVIDIA**, **Microsoft**, or **TCS**). "
+        "The first load of a company takes a few minutes while filings are downloaded and "
+        "embedded; after that it is instant from cache.",
+        icon="👈",
     )
     st.stop()
 
@@ -248,22 +254,15 @@ overview_tab, chat_tab, valuation_tab, report_tab = st.tabs(
 # -- Overview ---------------------------------------------------------------
 
 with overview_tab:
-    header = st.columns([3, 1])
-    with header[0]:
-        st.subheader(company.name)
-        st.caption(
-            f"{company.ticker} · {company.exchange} · {company.sector or 'sector n/a'}"
-            + (f" · SEC CIK {company.cik}" if company.cik else "")
-        )
-    with header[1]:
-        if valuation and valuation.rating != "NOT RATED":
-            # Upside is a real signed change, so it belongs in `delta`.
-            st.metric(
-                "Rating",
-                valuation.rating,
-                f"{valuation.upside * 100:+.1f}% to fair value"
-                if valuation.upside is not None else None,
-            )
+    meta = f"{company.ticker} · {company.exchange} · {company.sector or 'sector n/a'}" + (
+        f" · SEC CIK {company.cik}" if company.cik else ""
+    )
+    ui.company_header(
+        company.name,
+        meta,
+        rating=valuation.rating if valuation else None,
+        upside=valuation.upside if valuation else None,
+    )
 
     if history:
         latest = history.latest
