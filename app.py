@@ -292,32 +292,39 @@ with overview_tab:
         # "FY2026", which reads as growth of an unspecified quantity.
         revenue_growth = dict(history.growth_rates("revenue")).get(latest.fiscal_year)
 
-        cols = st.columns(5)
+        def _bn(value):
+            """Compact money that fits a metric card: 'USD 215.9B'."""
+            if value is None:
+                return "-"
+            unit, div = ("T", 1e12) if abs(value) >= 1e12 else ("B", 1e9)
+            return f"{history.currency} {value / div:,.1f}{unit}"
+
+        # Four wide cards, not five narrow ones — five truncated the values
+        # ("USD 21..."). The data source moves to a caption below.
+        cols = st.columns(4)
         cols[0].metric(
             f"Revenue · {period}",
-            f"{history.currency} {latest.revenue / 1e9:,.1f}bn" if latest.revenue else "-",
+            _bn(latest.revenue),
             f"{revenue_growth * 100:+.1f}% YoY" if revenue_growth is not None else None,
         )
         cols[1].metric(
-            f"Operating margin · {period}",
+            f"Op. margin · {period}",
             f"{latest.operating_margin * 100:.1f}%"
             if latest.operating_margin is not None else "-",
         )
-        cols[2].metric(
-            f"Free cash flow · {period}",
-            f"{history.currency} {latest.free_cash_flow / 1e9:,.1f}bn"
-            if latest.free_cash_flow else "-",
-        )
+        cols[2].metric(f"Free cash flow · {period}", _bn(latest.free_cash_flow))
         cols[3].metric(
             "Share price",
             f"{history.currency} {history.share_price:,.2f}"
             if history.share_price else "-",
         )
-        cols[4].metric(
-            "Financials from",
-            "SEC XBRL" if history.source == "sec_xbrl" else "Market data",
-            help="SEC XBRL is the company's own audited, tagged filing data.",
+
+        source_label = (
+            "SEC XBRL — the company's own audited, tagged filing data"
+            if history.source == "sec_xbrl"
+            else "a structured market-data provider"
         )
+        st.caption(f"Financial figures sourced from {source_label}.")
 
         if history.source != "sec_xbrl":
             st.info(

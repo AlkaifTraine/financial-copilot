@@ -39,15 +39,18 @@ Rules:
 - Quote figures exactly as they appear, with their units and period.
 - If the sources do not answer the question, say so plainly and state what is missing. Do not speculate.
 - If sources disagree or cover different periods, say which period each figure belongs to.
+- When the question does not name a fiscal period, lead with the MOST RECENT fiscal year available and use earlier years only as comparison. Do not open with an old year.
 - Be concise and analytical. No filler, no restating the question."""
 
-_PROMPT = """{history}Sources:
+_PROMPT = """{history}Most recent fiscal year in the sources: {latest_fy}
+
+Sources:
 
 {context}
 
 Question: {question}
 
-Answer using only the sources above, citing [n] inline."""
+Answer using only the sources above, citing [n] inline. If the question has no explicit period, lead with {latest_fy}."""
 
 _MAX_HISTORY_TURNS = 6
 
@@ -175,6 +178,7 @@ def ask(
             history=_format_history(history),
             context=result.context_block,
             question=question,
+            latest_fy=(f"FY{max(index.fiscal_years)}" if index.fiscal_years else "the latest year"),
         ),
         system=_SYSTEM,
         temperature=config.TEMPERATURE_FACTUAL,

@@ -132,9 +132,20 @@ h1 {{ font-weight: 700; }}
   padding: 16px 18px;
   box-shadow: var(--shadow);
 }}
-/* ink-2 (not muted) so labels clear WCAG AA on a white card — muted grey was ~2.6:1 */
-[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {{ color: var(--ink-2) !important; font-weight: 600; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }}
-[data-testid="stMetricValue"] {{ font-family: 'Space Grotesk', sans-serif; color: var(--ink); font-weight: 600; }}
+/* ink-2 (not muted) so labels clear WCAG AA on a white card — muted grey was ~2.6:1.
+   white-space:normal lets a long label ("Op. margin · FY2026") wrap to two lines
+   instead of being clipped with an ellipsis. */
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {{
+  color: var(--ink-2) !important; font-weight: 600; font-size: .72rem;
+  text-transform: uppercase; letter-spacing: .04em; white-space: normal !important;
+}}
+/* Smaller value font + no clipping so "USD 215.9B" shows in full rather than
+   truncating to "USD 21...". */
+[data-testid="stMetricValue"] {{
+  font-family: 'Space Grotesk', sans-serif; color: var(--ink); font-weight: 600;
+  font-size: 1.55rem !important; white-space: nowrap; overflow: visible;
+}}
+[data-testid="stMetricValue"] > * {{ overflow: visible !important; text-overflow: clip !important; }}
 
 /* ---- tabs: pill style ---- */
 [data-baseweb="tab-list"] {{ gap: 6px; background: var(--surface-2); padding: 5px; border-radius: 12px; border: 1px solid var(--border); }}
