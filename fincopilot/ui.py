@@ -91,6 +91,14 @@ h1 {{ font-weight: 700; }}
   border: 1px solid rgba(255,255,255,.14) !important;
 }}
 [data-testid="stSidebar"] .stTextInput input::placeholder {{ color: #7f8db0 !important; }}
+/* Alerts (info/warning) inside the dark sidebar keep their own light background,
+   so their text must stay dark — otherwise the blanket light-text rule above
+   makes them near-invisible. */
+[data-testid="stSidebar"] [data-testid="stAlert"] * {{ color: #1f2937 !important; }}
+
+/* Captions on the light main canvas: readable secondary ink, not pale grey.
+   No !important, so the dark-sidebar rule still wins inside the sidebar. */
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {{ color: var(--ink-2); }}
 
 /* ---- buttons ---- */
 /* `kind*="primary"` matches both a normal primary button (kind="primary") and
@@ -110,6 +118,11 @@ h1 {{ font-weight: 700; }}
   color: #fff; border: none;
   box-shadow: 0 6px 16px rgba(37,99,235,.28);
 }}
+/* Button labels render inside a markdown <p>, which the paragraph colour rule
+   below would otherwise paint dark — making primary-button text unreadable on
+   the gradient. Force the label to inherit the button's own colour. */
+.stButton button *, .stDownloadButton button *,
+[data-testid="stFormSubmitButton"] button * {{ color: inherit !important; }}
 
 /* ---- metrics as cards ---- */
 [data-testid="stMetric"] {{
@@ -119,7 +132,8 @@ h1 {{ font-weight: 700; }}
   padding: 16px 18px;
   box-shadow: var(--shadow);
 }}
-[data-testid="stMetricLabel"] {{ color: var(--muted); font-weight: 600; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }}
+/* ink-2 (not muted) so labels clear WCAG AA on a white card — muted grey was ~2.6:1 */
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {{ color: var(--ink-2) !important; font-weight: 600; font-size: .74rem; text-transform: uppercase; letter-spacing: .04em; }}
 [data-testid="stMetricValue"] {{ font-family: 'Space Grotesk', sans-serif; color: var(--ink); font-weight: 600; }}
 
 /* ---- tabs: pill style ---- */
@@ -228,9 +242,11 @@ h1 {{ font-weight: 700; }}
   display: inline-flex; align-items: center; gap: 8px; font-family: 'Space Grotesk', sans-serif;
   font-weight: 700; font-size: 1.05rem; padding: 8px 18px; border-radius: 999px; color: #fff;
 }}
-.fc-rating-pill.buy {{ background: linear-gradient(135deg, #059669, #10b981); }}
-.fc-rating-pill.sell {{ background: linear-gradient(135deg, #dc2626, #ef4444); }}
-.fc-rating-pill.hold {{ background: linear-gradient(135deg, #d97706, #f59e0b); }}
+/* Darkened so white pill text clears WCAG AA (the lightest stop still gives
+   >=4.5:1). The vivid amber/green ends were ~2-3:1 against white. */
+.fc-rating-pill.buy {{ background: linear-gradient(135deg, #065f46, #047857); }}
+.fc-rating-pill.sell {{ background: linear-gradient(135deg, #b91c1c, #dc2626); }}
+.fc-rating-pill.hold {{ background: linear-gradient(135deg, #92400e, #b45309); }}
 .fc-rating-pill.na {{ background: linear-gradient(135deg, #475569, #64748b); }}
 
 .fc-section-title {{
@@ -245,7 +261,7 @@ h1 {{ font-weight: 700; }}
   padding: 22px 26px; box-shadow: var(--shadow); margin-bottom: 18px;
 }}
 .fc-cohead-name {{ font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.7rem; color: var(--ink); letter-spacing: -.02em; }}
-.fc-cohead-meta {{ color: var(--muted); font-size: .9rem; margin-top: 3px; }}
+.fc-cohead-meta {{ color: var(--ink-2); font-size: .9rem; margin-top: 3px; }}
 </style>
 """
 
