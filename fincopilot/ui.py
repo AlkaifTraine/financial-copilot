@@ -93,19 +93,23 @@ h1 {{ font-weight: 700; }}
 [data-testid="stSidebar"] .stTextInput input::placeholder {{ color: #7f8db0 !important; }}
 
 /* ---- buttons ---- */
-.stButton > button, .stDownloadButton > button {{
+/* `kind*="primary"` matches both a normal primary button (kind="primary") and
+   a form submit button (kind="primaryFormSubmit"), so the search's Analyze
+   button gets the gradient too. */
+.stButton > button, .stDownloadButton > button, [data-testid="stFormSubmitButton"] > button {{
   border-radius: 10px;
   font-weight: 600;
   border: 1px solid var(--border);
   transition: transform .06s ease, box-shadow .2s ease, background .2s ease;
 }}
-.stButton > button:hover, .stDownloadButton > button:hover {{ transform: translateY(-1px); box-shadow: var(--shadow); }}
-.stButton > button[kind="primary"], .stDownloadButton > button[kind="primary"] {{
+.stButton > button:hover, .stDownloadButton > button:hover,
+[data-testid="stFormSubmitButton"] > button:hover {{ transform: translateY(-1px); box-shadow: var(--shadow); }}
+.stButton > button[kind*="primary"], .stDownloadButton > button[kind*="primary"],
+[data-testid="stFormSubmitButton"] > button[kind*="primary"] {{
   background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
   color: #fff; border: none;
   box-shadow: 0 6px 16px rgba(37,99,235,.28);
 }}
-[data-testid="stSidebar"] .stButton > button[kind="primary"] {{ box-shadow: 0 6px 18px rgba(37,99,235,.45); }}
 
 /* ---- metrics as cards ---- */
 [data-testid="stMetric"] {{
@@ -125,7 +129,23 @@ h1 {{ font-weight: 700; }}
 [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] {{ background: transparent !important; height: 0 !important; }}
 
 /* ---- inputs ---- */
-.stTextInput input {{ border-radius: 10px; }}
+/* Main-page inputs sit on a light surface, so force dark, visible text and a
+   clear focus ring. (The sidebar rules above intentionally override these for
+   the dark sidebar; the search input now lives on the main page.) */
+.stTextInput input {{
+  border-radius: 10px;
+  padding: 12px 15px !important;
+  font-size: .96rem;
+  color: var(--ink) !important;
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+}}
+.stTextInput input::placeholder {{ color: var(--muted) !important; }}
+.stTextInput input:focus {{
+  border-color: var(--brand-1) !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.14) !important;
+}}
+[data-testid="stSidebar"] .stTextInput input {{ color: #fff !important; background: rgba(255,255,255,.06) !important; }}
 
 /* ---- chat ---- */
 [data-testid="stChatMessage"] {{

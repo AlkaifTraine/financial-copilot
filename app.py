@@ -150,28 +150,38 @@ def load_company(query: str, *, refresh: bool = False) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Search (main page)
+# ---------------------------------------------------------------------------
+
+def render_search(*, key: str) -> None:
+    """Company search on the main page. A form, so Enter submits."""
+    with st.form(key=key, clear_on_submit=False, border=False):
+        cols = st.columns([5, 1])
+        query = cols[0].text_input(
+            "Company",
+            placeholder="Enter a company name or ticker — e.g. NVIDIA, Microsoft, TCS",
+            label_visibility="collapsed",
+            key=f"{key}_q",
+        )
+        submitted = cols[1].form_submit_button(
+            "Analyze", type="primary", width="stretch"
+        )
+        refresh = st.checkbox("Re-fetch documents (ignore cache, slower)", key=f"{key}_r")
+
+    if submitted:
+        if query.strip():
+            load_company(query.strip(), refresh=refresh)
+        else:
+            st.warning("Enter a company name or ticker.")
+
+
+# ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
     ui.sidebar_brand()
     st.caption("Equity research from primary filings, with citations you can check.")
-
-    query = st.text_input(
-        "Company name or ticker",
-        placeholder="NVIDIA, Microsoft, TCS...",
-        key="query_input",
-    )
-    refresh = st.checkbox(
-        "Re-fetch documents",
-        help="Ignore cached filings and search again. Slower.",
-    )
-
-    if st.button("Load company", type="primary", width='stretch'):
-        if query.strip():
-            load_company(query.strip(), refresh=refresh)
-        else:
-            st.warning("Enter a company name or ticker.")
 
     company = st.session_state["company"]
     index = st.session_state["index"]
@@ -218,6 +228,14 @@ if not st.session_state["index"]:
         ),
     )
 
+    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
+    render_search(key="search_landing")
+    st.caption(
+        "Try **NVIDIA**, **Microsoft**, or **TCS**. The first load of a company takes a "
+        "few minutes while filings are downloaded and embedded; after that it is instant "
+        "from cache."
+    )
+
     st.markdown("<div style='height:26px'></div>", unsafe_allow_html=True)
     ui.feature_grid([
         ("🔎", "Grounded answers", "Every response cites the exact document, section and page — open the source and check it yourself."),
@@ -225,14 +243,6 @@ if not st.session_state["index"]:
         ("🧮", "Real valuation", "Deterministic DCF on audited XBRL data. The model proposes assumptions; the math is never left to it."),
         ("📄", "One-click report", "A full equity research document — analysis, valuation, sensitivity, sources — as HTML and PDF."),
     ])
-
-    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
-    st.info(
-        "Enter a company in the sidebar to begin (try **NVIDIA**, **Microsoft**, or **TCS**). "
-        "The first load of a company takes a few minutes while filings are downloaded and "
-        "embedded; after that it is instant from cache.",
-        icon="👈",
-    )
     st.stop()
 
 
@@ -245,6 +255,9 @@ index = st.session_state["index"]
 ingest = st.session_state["ingest"]
 history = st.session_state["history"]
 valuation = st.session_state["valuation"]
+
+with st.expander("🔎  Analyze a different company"):
+    render_search(key="search_loaded")
 
 overview_tab, chat_tab, valuation_tab, report_tab = st.tabs(
     ["Overview", "Chat", "Valuation", "Report"]
