@@ -4,9 +4,8 @@
 
 Type a company name. The system finds its SEC filings, indexes them with an advanced retrieval pipeline, pulls its audited financials, builds a discounted-cash-flow valuation where *every assumption is stated and justified*, and generates a polished research report — every figure traceable to the page of the filing it came from.
 
-<!-- Replace with your live link once deployed (see Deployment). -->
-🔗 **Live demo:** _deploying — link goes here_
-🎥 Built with Streamlit · OpenAI · FAISS · SEC EDGAR · deployed on AWS EC2 with a GitHub Actions CI/CD pipeline
+🔗 **Live demo: [fincopilot.duckdns.org](https://fincopilot.duckdns.org/)**
+🛠️ Built with Streamlit · OpenAI · FAISS · SEC EDGAR · deployed on AWS EC2 (nginx/Caddy + systemd) with a GitHub Actions CI/CD pipeline
 
 ![Report cover](docs/images/report_cover.png)
 
