@@ -1,0 +1,8 @@
+[tool.pytest.ini_options]
+# Put the repository root on sys.path so `import fincopilot` resolves no matter
+# how pytest is launched. Without this, a bare `pytest tests/` (as CI runs it)
+# fails to import the package, while `python -m pytest` happens to work because
+# it adds the current directory — a difference that hid this in local runs.
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
