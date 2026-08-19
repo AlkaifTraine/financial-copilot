@@ -21,6 +21,7 @@ with the model switched off.
 from __future__ import annotations
 
 import logging
+import statistics
 from dataclasses import dataclass, field
 
 from .. import config
@@ -80,7 +81,7 @@ def _clamp(value: float, bounds: tuple[float, float]) -> tuple[float, bool]:
     return clamped, clamped != value
 
 
-def _growth_decay(year_one_growth: float) -> float:
+def _growth_decay(year_one_growth: float, steady: bool = False) -> float:
     """Geometric decay for the growth path, gentler for lower, sustainable growth.
 
     A single decay is wrong across the growth spectrum. Extreme growth cannot
@@ -89,15 +90,35 @@ def _growth_decay(year_one_growth: float) -> float:
     rate reaches a mature CAGR within a few years, which no such business does —
     and that is precisely what made the engine too bearish on quality growers.
     So the decay scales with the starting rate: the faster the start, the faster
-    it must fall.
+    it must fall. A company that has grown *steadily* (positive every year, low
+    dispersion) has demonstrated persistence and fades a little slower still.
     """
     if year_one_growth >= 0.45:
-        return 0.68
-    if year_one_growth >= 0.30:
-        return 0.74
-    if year_one_growth >= 0.18:
-        return 0.80
-    return 0.86
+        base = 0.68
+    elif year_one_growth >= 0.30:
+        base = 0.74
+    elif year_one_growth >= 0.18:
+        base = 0.80
+    else:
+        base = 0.86
+    if steady:
+        base = min(base + 0.05, 0.90)
+    return base
+
+
+def _growth_is_steady(growth_history: list[tuple[int, float]]) -> bool:
+    """Whether recent revenue growth has been consistently positive and stable.
+
+    A steady compounder earns slower decay; a company whose growth swings (a
+    cyclical, or a hyper-grower spiking then falling) does not. Measured over the
+    recent regime by the coefficient of variation, and gated on every recent year
+    being positive so a bounce-off-a-decline does not read as steadiness.
+    """
+    recent = [g for _y, g in growth_history[-4:]]
+    if len(recent) < 3 or any(g <= 0 for g in recent):
+        return False
+    mean = statistics.fmean(recent)
+    return mean > 0 and statistics.pstdev(recent) / mean < 0.5
 
 
 def _margin_floor_fraction(margins: list[float]) -> tuple[float, str]:
@@ -264,6 +285,21 @@ def derive_inputs(
         else 0.05
     )
 
+    # Normalised growth: the anchor for the forecast. For a mature company a single
+    # soft (or strong) year is noise, so blend the latest with the three-year mean
+    # — otherwise a one-off weak year (Coca-Cola printing 2% against a ~5% trend)
+    # gets extrapolated forever and craters the value. For a faster grower the
+    # recent deceleration is signal, not noise, so the latest number is kept. The
+    # ~15% line is where year-to-year noise stops dominating the underlying trend.
+    if 0 < recent_growth < 0.15 and mean_growth > recent_growth:
+        normalized_growth = (recent_growth + mean_growth) / 2
+    else:
+        normalized_growth = recent_growth
+    growth_steady = _growth_is_steady(growth_history)
+
+    margins = [y.operating_margin for y in history.years if y.operating_margin is not None]
+    mean_margin = sum(margins[-3:]) / len(margins[-3:]) if margins else 0.15
+
     margins = [y.operating_margin for y in history.years if y.operating_margin is not None]
     mean_margin = sum(margins[-3:]) / len(margins[-3:]) if margins else 0.15
 
@@ -328,22 +364,21 @@ def derive_inputs(
     # demand-cliff argument the model is not being given. The anchor is the more
     # conservative of last year's growth and the three-year mean, so one
     # anomalous spike cannot lift the floor.
-    growth_ceiling = min(max(recent_growth, 0.05), _MAX_YEAR_ONE_GROWTH)
-    if recent_growth > 0:
-        growth_anchor = min(recent_growth, mean_growth) if mean_growth > 0 else recent_growth
-        growth_floor = min(max(terminal_growth, growth_anchor * 0.5), growth_ceiling)
+    growth_ceiling = min(max(normalized_growth, 0.05), _MAX_YEAR_ONE_GROWTH)
+    if normalized_growth > 0:
+        growth_floor = min(max(terminal_growth, normalized_growth * 0.5), growth_ceiling)
     else:
         growth_floor = _MIN_YEAR_ONE_GROWTH
     growth_bounds = (growth_floor, growth_ceiling)
 
     proposed_growth, growth_rationale = _model_value(proposal, "year_one_revenue_growth")
     if proposed_growth is None:
-        year_one_growth, was_clamped = min(recent_growth, growth_ceiling), False
+        year_one_growth, was_clamped = min(normalized_growth, growth_ceiling), False
         growth_source = SOURCE_HISTORICAL
-        growth_derivation = f"Most recent reported growth ({recent_growth * 100:.0f}%)"
+        growth_derivation = f"Normalised recent growth ({normalized_growth * 100:.0f}%)"
         growth_rationale = (
-            "No model estimate was available, so the latest observed growth rate "
-            "is carried into year one."
+            "No model estimate was available, so the normalised recent growth "
+            "rate (latest blended with the three-year mean) is carried into year one."
         )
         raw_growth = None
     else:
@@ -352,7 +387,7 @@ def derive_inputs(
         growth_derivation = (
             f"Model estimate {proposed_growth * 100:.0f}%, bounded to "
             f"[{growth_bounds[0] * 100:.0f}%, {growth_bounds[1] * 100:.0f}%] "
-            f"from reported growth of {recent_growth * 100:.0f}%"
+            f"around normalised growth of {normalized_growth * 100:.0f}%"
         )
         raw_growth = proposed_growth if was_clamped else None
 
@@ -431,7 +466,7 @@ def derive_inputs(
     # applied to both is what made the model systematically too bearish on quality
     # growers — a 15% grower faded at a hyper-growth rate reaches a mature CAGR
     # within a few years, which no such business does.
-    growth_decay = _growth_decay(year_one_growth)
+    growth_decay = _growth_decay(year_one_growth, steady=growth_steady)
     growth_path = decay_path(year_one_growth, terminal_growth, horizon, growth_decay)
     current_margin = latest.operating_margin or mean_margin
     margin_path = fade(current_margin, terminal_margin, horizon)

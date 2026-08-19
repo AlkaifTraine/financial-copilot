@@ -170,7 +170,12 @@ def _normalise(value) -> float | None:
         return None
     if abs(number) > 1.5:
         number /= 100.0
-    return number
+    # Quantise to the nearest 0.5 percentage point. The reviewer is not precise to
+    # the basis point, and rounding means run-to-run wording noise in the model
+    # ("14.8%" one run, "15.1%" the next) collapses to the same input, so the
+    # cached result and the live result agree. Reproducibility proper comes from
+    # the per-fingerprint cache; this keeps the first run stable enough to trust.
+    return round(number / 0.005) * 0.005
 
 
 def _parse(payload) -> dict | None:
