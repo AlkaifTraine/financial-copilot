@@ -61,6 +61,7 @@ class Section:
     summary: str = ""                              # one-line standfirst
     paragraphs: list[str] = field(default_factory=list)
     bullets: list[str] = field(default_factory=list)
+    implication: str = ""                          # the "so what" for the investment case
     evidence: list[Evidence] = field(default_factory=list)
 
     @property
@@ -113,6 +114,7 @@ class ReportModel:
     sensitivity: dict | None = None
     comps: dict | None = None
     priced_in: dict | None = None      # reverse-DCF: what the price implies per driver
+    segment_forecast: dict | None = None   # bottom-up segment forecast vs top-down total
 
     charts: dict[str, str] = field(default_factory=dict)     # name -> file path
     sources: list[dict] = field(default_factory=list)

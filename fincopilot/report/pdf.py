@@ -372,6 +372,11 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                 bulletType="bullet", start="–", leftIndent=10, bulletFontSize=7,
             ))
 
+        if section.implication:
+            story.append(Paragraph(
+                f"<b>What it means.</b> {section.implication}", styles["body"]
+            ))
+
         if section.evidence:
             # Numbered so the inline [n] markers in the prose above resolve to a
             # specific document and page the reader can open.
@@ -535,6 +540,42 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             ])
         widths = [CONTENT_WIDTH * w for w in (0.14, 0.17, 0.14, 0.17, 0.19, 0.19)]
         story.append(_table(rows, widths, styles))
+
+    # -- segment forecast (bottom-up cross-check) -------------------------
+    sf = report.segment_forecast
+    if sf and sf.get("segments"):
+        end_year = sf["base_year"] + sf["horizon"]
+        story.append(Paragraph("SEGMENT FORECAST: A BOTTOM-UP CROSS-CHECK", styles["h2"]))
+        story.append(Paragraph(
+            "The headline DCF grows total revenue top-down. This forecasts each reportable "
+            "segment on its own trajectory and sums them, as a check on that single blended "
+            "number. The headline valuation is unchanged; this is the stress-test on its "
+            "central assumption.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 4))
+
+        rows = [["Segment", f"Revenue FY{sf['base_year']}", "Yr-1 growth",
+                 f"{sf['horizon']}y CAGR", f"Revenue FY{end_year}"]]
+        for seg in sf["segments"]:
+            rows.append([
+                seg["name"], _money(seg["latest_revenue"]), _pct(seg["year_one_growth"]),
+                _pct(seg["implied_cagr"]), _money(seg["terminal_revenue"]),
+            ])
+        rows.append([
+            "Bottom-up total", _money(sf["latest_segment_sum"]), "-",
+            _pct(sf["bottom_up_cagr"]), _money(sf["bottom_up_terminal_revenue"]),
+        ])
+        widths = [CONTENT_WIDTH * w for w in (0.32, 0.19, 0.15, 0.15, 0.19)]
+        table = _table(rows, widths, styles)
+        # Emphasise the totals row.
+        last = len(rows) - 1
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, last), (-1, last), SURFACE_2),
+            ("FONTNAME", (0, last), (0, last), "Helvetica-Bold"),
+        ]))
+        story.append(table)
+        story.append(Paragraph(sf["note"], styles["small"]))
 
     # -- scenarios --------------------------------------------------------
     if report.scenarios and report.scenarios.get("cases"):

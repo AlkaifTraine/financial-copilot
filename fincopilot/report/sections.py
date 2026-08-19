@@ -108,26 +108,37 @@ SPECS: list[SectionSpec] = [
 
 _SYSTEM = """You are an equity research analyst writing one section of a research report.
 
+The difference between research and a summary is interpretation. A summary says what happened; research says what it means and whether it lasts. Every paragraph must move past the fact to its consequence.
+
+Structure each paragraph as: FACT (the number or disclosure) -> INTERPRETATION (what it tells us about the business) -> SUSTAINABILITY (whether it persists, and what would break it). The section then closes on the INVESTMENT IMPLICATION — the "so what" for owning the stock.
+
 Rules:
 - Use ONLY the numbered sources provided. No outside knowledge.
 - Cite inline as [n] after each factual claim.
 - Quote figures exactly, with their period.
-- Write densely and analytically. No filler, no hedging, no restating the brief.
-- If the sources do not support a claim, leave it out.
-- If the sources cover the topic thinly, write less rather than padding."""
+- Interpret, do not narrate. Never write a sentence that only restates a source without drawing a conclusion from it.
+- Do not repeat what other sections cover (you are told what they are). Stay in your lane.
+- Banned: "underscores", "highlights", "demonstrates", "reflects", "showcases", "well-positioned", "remains committed", and any sentence that could appear in the company's own press release.
+- If the sources are thin, write less. A short, sharp section beats a padded one."""
 
 _PROMPT = """Company: {company}
 Section: {title}
 
 Brief: {brief}
 
+Other sections of this report (do NOT duplicate their content):
+{siblings}
+
 Sources:
 {context}
 
+Write this section as interpretation, not description. Each paragraph: fact -> what it means -> whether it lasts. Close with the investment implication.
+
 Return JSON:
-{{"summary": "one sentence standfirst, under 25 words",
-  "paragraphs": ["2-4 analytical paragraphs"],
-  "bullets": ["3-6 short specific points, each with a figure or a named fact where possible"]}}"""
+{{"summary": "one sentence standfirst that states a view, not a topic, under 25 words",
+  "paragraphs": ["2-4 analytical paragraphs, each ending on an interpretation rather than a bare fact"],
+  "bullets": ["3-6 short specific points, each pairing a figure or named fact WITH the conclusion drawn from it"],
+  "implication": "one sentence: what this section specifically means for the investment case"}}"""
 
 
 _CITATION = re.compile(r"\[\s*(?:SOURCE\s*)?((?:\d+\s*[,;]\s*)*\d+)\s*\]", re.I)
@@ -163,6 +174,12 @@ def _evidence_from(result) -> list[Evidence]:
     ]
 
 
+def _sibling_brief(current: SectionSpec) -> str:
+    """A one-line map of the other sections, so each stays in its lane (#24)."""
+    others = [f"- {s.title}: {s.brief.split('.')[0]}." for s in SPECS if s.key != current.key]
+    return "\n".join(others)
+
+
 def build_section(
     spec: SectionSpec,
     index,
@@ -192,6 +209,7 @@ def build_section(
             company=company_name,
             title=spec.title,
             brief=spec.brief,
+            siblings=_sibling_brief(spec),
             context=result.context_block,
         ),
         system=_SYSTEM,
@@ -217,6 +235,7 @@ def build_section(
         for b in (payload.get("bullets") or [])
         if str(b).strip()
     ]
+    section.implication = _normalise_citations(str(payload.get("implication") or "").strip(), count)
 
     return section
 

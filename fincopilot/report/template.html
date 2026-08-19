@@ -108,6 +108,11 @@
     background: var(--surface-2); border-left: 3px solid var(--accent);
     padding: 10px 14px; margin: 12px 0; font-size: 12.5px; color: var(--ink-2);
   }
+  .fc-implication {
+    font-size: 12.5px; color: var(--ink); margin: 8px 0 4px; padding: 8px 12px;
+    background: var(--surface-2); border-radius: 6px;
+  }
+  .fc-implication strong { color: var(--navy); }
 
   /* ---- investment thesis (first page) ---- */
   .fc-thesis {
@@ -247,6 +252,7 @@
   {% if s.bullets %}
   <ul class="fc-bullets">{% for b in s.bullets %}<li>{{ b }}</li>{% endfor %}</ul>
   {% endif %}
+  {% if s.implication %}<p class="fc-implication"><strong>What it means.</strong> {{ s.implication }}</p>{% endif %}
   {% if s.evidence %}
   <div class="fc-evidence">
     <strong>Sources cited above.</strong>
@@ -422,6 +428,43 @@
     {% endfor %}
     </tbody>
   </table></div>
+  {% endif %}
+
+  {# ---- segment forecast (bottom-up cross-check) ---- #}
+  {% if r.segment_forecast and r.segment_forecast.segments %}
+  {% set sf = r.segment_forecast %}
+  <h2 class="fc-h">Segment Forecast: a Bottom-Up Cross-Check</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    The headline DCF grows total revenue top-down. This forecasts each reportable segment on its
+    own trajectory and sums them, as a check on that single blended number — a total CAGR is only
+    as credible as the mix of segments underneath it. The headline valuation is unchanged; this is
+    the stress-test on its central assumption.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr>
+      <th>Segment</th><th>Revenue FY{{ sf.base_year }}</th><th>Yr-1 growth</th>
+      <th>{{ sf.horizon }}y CAGR</th><th>Revenue FY{{ sf.base_year + sf.horizon }}</th>
+    </tr></thead>
+    <tbody>
+    {% for seg in sf.segments %}
+      <tr>
+        <td>{{ seg.name }}</td>
+        <td>{{ money(seg.latest_revenue) }}</td>
+        <td>{{ pct(seg.year_one_growth) }}</td>
+        <td>{{ pct(seg.implied_cagr) }}</td>
+        <td>{{ money(seg.terminal_revenue) }}</td>
+      </tr>
+    {% endfor %}
+      <tr style="font-weight:620;background:var(--surface-2);">
+        <td>Bottom-up total</td>
+        <td>{{ money(sf.latest_segment_sum) }}</td>
+        <td>&ndash;</td>
+        <td>{{ pct(sf.bottom_up_cagr) }}</td>
+        <td>{{ money(sf.bottom_up_terminal_revenue) }}</td>
+      </tr>
+    </tbody>
+  </table></div>
+  <p style="font-size:12.5px;color:var(--ink-2);margin-top:8px;">{{ sf.note }}</p>
   {% endif %}
 
   {% if r.scenarios and r.scenarios.cases %}
