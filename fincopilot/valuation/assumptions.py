@@ -115,20 +115,61 @@ def _history_table(history: FinancialHistory) -> str:
     return "\n".join(lines)
 
 
+def _history_fingerprint(history: FinancialHistory) -> str:
+    """A stable hash of the numeric series that drive the proposal.
+
+    Changes only when the company's reported figures change (a new fiscal year,
+    a restatement), which is exactly when the assumptions *should* be recomputed.
+    """
+    import hashlib
+
+    parts = [
+        f"{y.fiscal_year}:{y.revenue}:{y.operating_margin}:{y.free_cash_flow}"
+        for y in history.years
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:16]
+
+
 def _propose(history: FinancialHistory, company: Company, context: str) -> dict:
-    """Ask the model for forward assumptions. Returns {} on any failure."""
+    """Ask the model for forward assumptions, cached per company + data.
+
+    The proposal is cached keyed on the ticker and a fingerprint of the reported
+    numbers — deliberately NOT on the retrieved context, which varies run to run.
+    Without this the same company produced a different fair value on every load
+    (temperature 0 is not fully deterministic, and the context differs each
+    time), which is unacceptable for a valuation. The cache guarantees a company
+    reproduces exactly until its filings change.
+    """
+    import json
+
+    cache_dir = config.CACHE_DIR / "assumptions"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / f"{company.slug}_{_history_fingerprint(history)}.json"
+
+    if cache_path.exists():
+        try:
+            return json.loads(cache_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupt entry; recompute
+
     payload = complete_json(
         _REFINE_PROMPT.format(
             company=f"{company.name} ({company.ticker})",
             history=_history_table(history),
             context=(context or "No management commentary was retrieved.")[:4000],
         ),
-        # A valuation must reproduce exactly on a re-run; even 0.1 moved the
-        # proposed growth rate enough to shift fair value by several percent.
         temperature=0.0,
         max_tokens=700,
     )
-    return payload if isinstance(payload, dict) else {}
+    result = payload if isinstance(payload, dict) else {}
+
+    if result:
+        try:
+            cache_path.write_text(json.dumps(result), encoding="utf-8")
+        except OSError:
+            pass  # caching is an optimisation, never required
+
+    return result
 
 
 def _model_value(proposal: dict, key: str) -> tuple[float | None, str]:
