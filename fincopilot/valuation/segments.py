@@ -103,23 +103,24 @@ class SegmentAnalysis:
 
 _EXTRACT_PROMPT = """From the segment disclosures below for {company}, extract FULL-FISCAL-YEAR reportable operating segment revenue.
 
-Reported TOTAL revenue, for reference — the segments must sum to approximately these figures:
+Reported TOTAL revenue, for reference — the segments must sum to approximately these figures, and you MUST include the most recent year ({recent_year}):
 {totals}
 
 Segment disclosures (note: some tables are quarterly or year-to-date, NOT full year — only use full fiscal-year figures, and if only interim figures are shown, do not guess):
 {context}
 
 Rules:
-- ONLY segments the company actually reports (business/product segments), never geographic splits.
+- Use the company's REPORTABLE operating segments exactly as the filing defines them. For some companies these are business/product segments (e.g. Compute & Networking / Graphics); for others they are geographic (e.g. Americas / Europe / Greater China). Do not substitute a different or older breakdown.
+- The segments for a year MUST sum to roughly that year's total above. If a candidate breakdown does not sum to the {recent_year} total, it is the wrong table — do not use it.
 - Values in MILLIONS of the reporting currency, matching the "$ in millions" the filings use (e.g. 116193 for $116.2 billion).
-- Use the SAME fiscal years as the totals above. The segment revenues for a year must sum to roughly that year's total.
+- Include the same fiscal years as the totals above, and always include {recent_year}.
 
 Return JSON:
 {{"segments": [
   {{"name": "segment name", "revenue_by_year": {{"{recent_year}": 0.0}}}}
 ]}}
 
-If the text does not disclose full-year segment revenue, return {{"segments": []}}."""
+If the text does not disclose full-year segment revenue for {recent_year}, return {{"segments": []}}."""
 
 
 def _totals_anchor(history: FinancialHistory) -> str:
