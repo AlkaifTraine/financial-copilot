@@ -88,20 +88,9 @@ SPECS: list[SectionSpec] = [
         ),
         bullet_label="Competitive factors",
     ),
-    SectionSpec(
-        key="risks",
-        title="Key Risks",
-        query=(
-            "risk factors customer concentration supply chain regulatory export "
-            "controls litigation dependence competition risks"
-        ),
-        brief=(
-            "The risks that would most affect the investment case, drawn from the "
-            "risk factors. Prioritise by materiality, not filing order. Quantify "
-            "where the filings quantify."
-        ),
-        bullet_label="Principal risks",
-    ),
+    # NOTE: the prose "Key Risks" section was replaced by a quantified risk table
+    # (report/risks.py), rendered separately in the report. The risk-factor
+    # retrieval query it used lives on there now.
     SectionSpec(
         key="outlook",
         title="Outlook",

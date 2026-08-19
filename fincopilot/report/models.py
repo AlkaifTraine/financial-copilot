@@ -96,6 +96,11 @@ class ReportModel:
     # business quality from stock attractiveness and frames market-vs-us.
     thesis: dict | None = None
 
+    # Quantified risk assessment: each material risk with probability, financial
+    # impact, valuation impact and an early-warning indicator. Replaces the prose
+    # risk section. Rendered as a table.
+    risks: list[dict] = field(default_factory=list)
+
     kpis: list[KPI] = field(default_factory=list)
     sections: list[Section] = field(default_factory=list)
 

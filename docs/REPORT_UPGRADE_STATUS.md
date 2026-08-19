@@ -45,22 +45,28 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
   `tests/test_reverse.py` (round-trip / direction / unreachable). NVDA: growth
   32.6% and terminal growth 13.1% priced in; margin and FCF unreachable at any
   ceiling — a sharp SELL exhibit.
+- **#17 Quantified risks** — the prose risk section is replaced by a table:
+  each material risk carries probability / financial impact / valuation impact /
+  early-warning indicator, ranked by materiality. LLM pass (`report/risks.py`,
+  models `QuantifiedRisk`/`RiskAssessment`) grounded in a targeted risk-factor
+  retrieval AND the model's own numbers — the scenario range and reverse-DCF
+  gaps give the valuation-impact column real figures to anchor to (NVDA risks
+  cite the $21.58 bear and $42.26 base). Deterministic fallback from the
+  priced-in/scenario numbers. `risks` SectionSpec dropped from
+  `report/sections.py`. Rendered HTML + PDF; tests in `tests/test_risks.py`.
 
 ## Next batch (priority order)
 
-1. **#17 Quantified risks** — each material risk with probability / financial
-   impact / valuation impact / early-warning indicator. LLM pass grounded in the
-   filings + the numbers; render as a table. Replace the descriptive risk prose.
-2. **#3 Narrative → interpretation** — rewrite `report/sections.py` prompts so
+1. **#3 Narrative → interpretation** — rewrite `report/sections.py` prompts so
    each section follows fact → interpretation → sustainability → investment
    implication, not description. Reduce repetition across sections (#24).
-3. **#16 Segment forecasting** — where segment revenue exists (SEC XBRL has it
+2. **#16 Segment forecasting** — where segment revenue exists (SEC XBRL has it
    for NVDA: Compute & Networking, Graphics), forecast segments and sum to
    total. New `valuation/segments.py`.
-4. **#19/#20 Catalysts + monitoring dashboard** — upcoming catalysts (event /
+3. **#19/#20 Catalysts + monitoring dashboard** — upcoming catalysts (event /
    timing / direction / metric) and a "key things to watch" table
    (current / trend / expected / why it matters). Can extend `report/thesis.py`.
-5. **#11 Management-says vs our-view**, **#13/#14 competitive & moat analysis**,
+4. **#11 Management-says vs our-view**, **#13/#14 competitive & moat analysis**,
    **#23 stricter citation QA**, **#22 full consistency-check pass**.
 
 ## Key files

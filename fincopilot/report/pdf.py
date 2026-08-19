@@ -403,6 +403,46 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                           Paragraph(f"Figures in {currency}. Source: company filings.",
                                     styles["small"])]
 
+    # -- quantified risks -------------------------------------------------
+    if report.risks:
+        story.append(Paragraph("KEY RISKS", styles["h2"]))
+        story.append(Paragraph(
+            "The risks most material to the investment case, ranked by how much damage each "
+            "would do — not by filing order. Each carries what it hits, what it does to our "
+            "fair value, and the single indicator to watch for it starting.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 4))
+
+        header = ["Risk", "Likelihood", "Financial impact", "Valuation impact", "What to watch"]
+        rows = [[Paragraph(h, styles["cellb"]) for h in header]]
+        for risk in report.risks:
+            name = risk.get("risk", "")
+            description = risk.get("description", "")
+            risk_cell = f"<b>{name}</b>"
+            if description:
+                risk_cell += f'<br/><font size="6.8" color="#7c8794">{description}</font>'
+            rows.append([
+                Paragraph(risk_cell, styles["cell"]),
+                Paragraph(risk.get("probability", ""), styles["cell"]),
+                Paragraph(risk.get("financial_impact", ""), styles["cell"]),
+                Paragraph(risk.get("valuation_impact", ""), styles["cell"]),
+                Paragraph(risk.get("early_warning", ""), styles["cell"]),
+            ])
+        widths = [CONTENT_WIDTH * w for w in (0.22, 0.11, 0.23, 0.22, 0.22)]
+        table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+            ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(table)
+
     # -- valuation triangulation ------------------------------------------
     if report.blended and len(report.blended.get("estimates", [])) > 1:
         bl = report.blended

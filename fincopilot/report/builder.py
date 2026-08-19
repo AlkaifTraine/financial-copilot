@@ -236,6 +236,24 @@ def build_report(
             company, history, valuation, qualitative_context=thesis_context
         ).to_dict()
 
+        # Quantified risk assessment — its own targeted retrieval over the risk
+        # factors, then an LLM pass grounded in both those filings and the
+        # model's own numbers (scenario range, reverse-DCF gaps). Replaces the
+        # prose risk section.
+        if progress:
+            progress("risks", "quantifying the key risks")
+        from .risks import generate_risks
+
+        risk_context = retrieve(
+            "risk factors customer concentration supply chain regulatory export "
+            "controls litigation dependence competition risks",
+            index,
+            top_k=8,
+        ).context_block
+        report.risks = generate_risks(
+            company, history, valuation, qualitative_context=risk_context
+        ).to_dict()["risks"]
+
     if include_narrative and index is not None:
         report.sections = section_builder.build_all(
             index,
