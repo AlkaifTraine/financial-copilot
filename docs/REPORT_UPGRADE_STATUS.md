@@ -25,7 +25,20 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
 
 ## Done (shipped, verified)
 
-- **Valuation-accuracy calibration (2 phases).** Diagnosis: NVDA and AAPL both
+- **Valuation-accuracy calibration (4 phases) + robustness harness.** Direction:
+  strict intrinsic value + honest flags (user decision) — never calibrate to
+  price. Phase 3 added adaptive growth decay (a single 0.70 faded durable
+  compounders to a mature CAGR in a few years) and degenerate-DCF handling (a
+  non-positive equity value → NOT RATED, not "SELL −151%"). Phase 4 added
+  normalized growth anchoring (a mature company's single soft year no longer
+  extrapolates forever — KO/AAPL y1 2%→5-6%), durable-compounder persistence
+  (`_growth_is_steady` → gentler decay; MSFT CAGR 9%→11%), and agent-output
+  quantisation for run-to-run stability. `scripts/robustness_check.py` runs the
+  engine over 8 diverse profiles and asserts the hard invariants — **all pass**.
+  Known-and-accepted: premium mega-caps still price 60-70% below market and flag
+  as outliers (strict-intrinsic working as chosen; the market pays multiples a
+  disciplined DCF won't credit). Phases 1-2 below.
+- **Valuation-accuracy calibration (phases 1-2).** Diagnosis: NVDA and AAPL both
   priced ~80% below market from THREE compounding conservative levers, not one
   (decomposition — WACC 14.7→10 = +60%, margin 36→60 = +38%, growth 20→45% = +71%;
   all three at still-conservative levels ≈ market). All fixes deterministic-math,
@@ -131,6 +144,8 @@ shipped. Candidate follow-ups if the work continues:
 | Thesis engine | `fincopilot/report/thesis.py` |
 | Risks / competitive / forward | `fincopilot/report/{risks,competitive,monitoring}.py` |
 | Report QA (citations + consistency) | `fincopilot/report/qa.py` |
+| Assumption agent (critique/revise) | `fincopilot/valuation/agent.py` |
+| Robustness harness (run before core changes) | `scripts/robustness_check.py` |
 | Report assembly | `fincopilot/report/builder.py` + `models.py` |
 | Narrative sections | `fincopilot/report/sections.py` |
 | Renderers | `fincopilot/report/template.html` (HTML) · `pdf.py` (PDF) |
