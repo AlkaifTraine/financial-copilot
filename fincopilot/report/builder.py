@@ -254,6 +254,25 @@ def build_report(
             company, history, valuation, qualitative_context=risk_context
         ).to_dict()["risks"]
 
+        # Segment forecast — a bottom-up cross-check on the top-down revenue
+        # growth the DCF uses. Extracts segment revenue from the segment footnote
+        # (cached), forecasts each on its own trajectory, and reconciles the sum.
+        if progress:
+            progress("segments", "forecasting segments bottom-up")
+        from ..valuation.segments import build_segments
+
+        segment_context = retrieve(
+            "revenue by reportable operating segment full fiscal year annual "
+            "segment results twelve months ended segment revenue total",
+            index,
+            top_k=8,
+        ).context_block
+        segment_analysis = build_segments(
+            company, history, valuation, qualitative_context=segment_context
+        )
+        if segment_analysis and segment_analysis.segments:
+            report.segment_forecast = segment_analysis.to_dict()
+
     if include_narrative and index is not None:
         report.sections = section_builder.build_all(
             index,
