@@ -54,20 +54,47 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
   cite the $21.58 bear and $42.26 base). Deterministic fallback from the
   priced-in/scenario numbers. `risks` SectionSpec dropped from
   `report/sections.py`. Rendered HTML + PDF; tests in `tests/test_risks.py`.
+- **#3 / #24 Narrative → interpretation** — `report/sections.py` prompts rewritten
+  to demand fact → interpretation → sustainability, closing each section on an
+  explicit investment implication (`Section.implication`, "What it means."). Each
+  section is handed a one-line map of the others and told to stay in its lane
+  (#24); banned-phrase list kills press-release filler.
+- **#16 Segment forecasting** — `valuation/segments.py`: segment revenue extracted
+  from the segment footnote by the model, ANCHORED to reported per-year total
+  revenue and required to reconcile, cached per company+fingerprint; deterministic
+  clamped forecast summed bottom-up as a cross-check on the top-down CAGR. Two
+  guardrails: >15% gap → "indicative", >35% gap → suppress the exhibit. NVDA
+  reconciles cleanly and shows the real debate: 22% bottom-up vs 8% top-down.
+  Tests in `tests/test_segments.py`.
+- **#19/#20 Catalysts + monitoring** — `report/monitoring.py`: dated catalysts
+  (event/timing/direction/metric) and a monitoring dashboard (metric/current/
+  trend/expected/why), grounded in the reverse-DCF gaps. Fallback + tests.
+- **#11/#13/#14 Competitive moat + management-vs-us** — `report/competitive.py`:
+  moat rating argued against the terminal margin it must defend (NVDA "Narrow"),
+  plus a management-says-vs-our-view table surfacing where we diverge. Fallback +
+  tests (`tests/test_forward_competitive.py`).
+- **#22/#23 QA passes** — `report/qa.py`: deterministic citation-grounding audit
+  (dangling markers, uncited multi-para sections) and consistency checks
+  (scenario ordering, probability sum, blended-in-range, rating/upside sign),
+  run last in `build_report`, findings surfaced in limitations. NVDA: 0 findings.
+  Tests in `tests/test_qa.py`.
 
 ## Next batch (priority order)
 
-1. **#3 Narrative → interpretation** — rewrite `report/sections.py` prompts so
-   each section follows fact → interpretation → sustainability → investment
-   implication, not description. Reduce repetition across sections (#24).
-2. **#16 Segment forecasting** — where segment revenue exists (SEC XBRL has it
-   for NVDA: Compute & Networking, Graphics), forecast segments and sum to
-   total. New `valuation/segments.py`.
-3. **#19/#20 Catalysts + monitoring dashboard** — upcoming catalysts (event /
-   timing / direction / metric) and a "key things to watch" table
-   (current / trend / expected / why it matters). Can extend `report/thesis.py`.
-4. **#11 Management-says vs our-view**, **#13/#14 competitive & moat analysis**,
-   **#23 stricter citation QA**, **#22 full consistency-check pass**.
+Nothing outstanding — the full spec list above (#3–#24) is shipped. Candidate
+follow-ups if the work continues:
+
+1. **Feed `priced_in` / segment CAGR into the thesis LLM.** The thesis still only
+   sees `market_implied_growth`; handing it the full reverse-DCF table and the
+   22%-vs-8% segment gap would let the written argument cite "margins can't
+   justify this at any level" directly.
+2. **Pressure-test the top-down base-case growth.** The segment cross-check keeps
+   surfacing an 8% top-down CAGR vs ~22% bottom-up on NVDA — the load-bearing
+   assumption. Consider letting the segment build inform (not just check) the
+   headline forecast, still deterministically.
+3. **Multi-company regression.** Everything is verified on NVDA (a SELL); run
+   AAPL / a non-SEC filer / a low-growth name to shake out fallbacks and the
+   segment extraction on different disclosure formats.
 
 ## Key files
 
@@ -76,7 +103,10 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
 | Valuation orchestration | `fincopilot/valuation/__init__.py` (`value_company`) |
 | Assumptions (cached) | `fincopilot/valuation/assumptions.py` |
 | Scenarios / blend / reverse | `fincopilot/valuation/{scenarios,blend,reverse}.py` |
+| Segment forecast (cross-check) | `fincopilot/valuation/segments.py` |
 | Thesis engine | `fincopilot/report/thesis.py` |
+| Risks / competitive / forward | `fincopilot/report/{risks,competitive,monitoring}.py` |
+| Report QA (citations + consistency) | `fincopilot/report/qa.py` |
 | Report assembly | `fincopilot/report/builder.py` + `models.py` |
 | Narrative sections | `fincopilot/report/sections.py` |
 | Renderers | `fincopilot/report/template.html` (HTML) · `pdf.py` (PDF) |
