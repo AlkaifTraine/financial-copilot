@@ -325,6 +325,20 @@ SIZE_PREMIUM_TIERS = (
     (0.0, 0.025),       # < $2bn     : small-cap, +2.5%
 )
 
+# The size tiers above are in absolute USD, but market cap arrives in the
+# company's own currency (yfinance reports it in the local unit). Without
+# converting, a mid-cap Indian company's rupee market cap clears the USD mega-cap
+# threshold and is wrongly handed the mega-cap discount. Only a rough magnitude is
+# needed to pick a tier, so an approximate static rate is used rather than a
+# fragile extra FX fetch — being 20% off never crosses a 5x tier boundary. A
+# currency absent from this map skips the size premium entirely (safer than
+# assuming parity with the dollar). Rates are USD per one unit of the currency.
+APPROX_USD_FX = {
+    "USD": 1.0, "EUR": 1.08, "GBP": 1.27, "JPY": 0.0067, "INR": 0.012,
+    "CNY": 0.14, "HKD": 0.128, "CAD": 0.73, "AUD": 0.66, "CHF": 1.12,
+    "KRW": 0.00072, "TWD": 0.031, "BRL": 0.18, "SGD": 0.74,
+}
+
 # Sensitivity grid: WACC on one axis, terminal growth on the other.
 SENSITIVITY_WACC_STEPS = 5
 # +/-100bps per step, spanning +/-200bps overall. A narrower band understated

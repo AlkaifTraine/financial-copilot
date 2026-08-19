@@ -183,22 +183,43 @@ def _beta(history: FinancialHistory, ledger: AssumptionLedger) -> float:
     return bounded
 
 
+def _market_cap_usd(history: FinancialHistory) -> float | None:
+    """Market cap converted to USD for size-tier selection.
+
+    Returns ``None`` when the reporting currency is unknown, so the size premium
+    is skipped rather than mis-bucketing a non-USD cap against USD thresholds.
+    """
+    cap = history.market_cap or 0.0
+    if cap <= 0:
+        return None
+    rate = config.APPROX_USD_FX.get((history.currency or "USD").upper())
+    if rate is None:
+        return None
+    return cap * rate
+
+
 def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
-    """Build-up size premium added to the cost of equity, by market cap."""
-    market_cap = history.market_cap or 0.0
+    """Build-up size premium added to the cost of equity, by market cap (in USD)."""
+    market_cap_usd = _market_cap_usd(history)
+    if market_cap_usd is None:
+        return 0.0
+
     premium = 0.0
     label = "mid-cap"
     for threshold, value in config.SIZE_PREMIUM_TIERS:
-        if market_cap >= threshold:
+        if market_cap_usd >= threshold:
             premium = value
             label = {0.0: "small-cap", 2e9: "mid-cap", 10e9: "large-cap", 200e9: "mega-cap"}.get(
                 threshold, "mid-cap"
             )
             break
 
-    if market_cap <= 0:
-        return 0.0
-
+    same_currency = (history.currency or "USD").upper() == "USD"
+    cap_text = (
+        f"market cap {history.currency} {(history.market_cap or 0) / 1e9:,.0f}bn"
+        if same_currency
+        else f"market cap ~USD {market_cap_usd / 1e9:,.0f}bn"
+    )
     ledger.add(
         Assumption(
             key="size_premium",
@@ -206,10 +227,7 @@ def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
             value=premium,
             unit="%",
             source=SOURCE_DEFAULT,
-            derivation=(
-                f"Build-up size premium for a {label} "
-                f"(market cap {history.currency} {market_cap / 1e9:,.0f}bn)"
-            ),
+            derivation=f"Build-up size premium for a {label} ({cap_text})",
             rationale=(
                 "The documented size effect: smaller companies require a higher "
                 "return for illiquidity and fragility, the largest a small discount "

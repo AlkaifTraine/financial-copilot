@@ -15,9 +15,11 @@ from fincopilot.valuation.models import AssumptionLedger
 from fincopilot.valuation.wacc import _size_premium, compute_wacc
 
 
-def _history(market_cap: float | None = None, beta: float | None = None) -> FinancialHistory:
+def _history(
+    market_cap: float | None = None, beta: float | None = None, currency: str = "USD"
+) -> FinancialHistory:
     return FinancialHistory(
-        ticker="TST", company_name="Test Co", currency="USD", market_cap=market_cap, beta=beta,
+        ticker="TST", company_name="Test Co", currency=currency, market_cap=market_cap, beta=beta,
         years=[
             FiscalYear(fiscal_year=2024, period_end="2024-12-31", revenue=100e9,
                        operating_income=30e9, pretax_income=30e9, tax_expense=6e9,
@@ -45,6 +47,20 @@ class TestSizePremium:
         caps = [1e9, 5e9, 50e9, 3e12]
         premia = [_size_premium(_history(market_cap=c), AssumptionLedger()) for c in caps]
         assert premia == sorted(premia, reverse=True)
+
+    def test_local_currency_cap_converted_before_bucketing(self):
+        # A ₹300bn mid-cap (~$3.6bn) must NOT clear the USD mega-cap threshold.
+        prem = _size_premium(_history(market_cap=300e9, currency="INR"), AssumptionLedger())
+        assert prem == pytest.approx(0.010)          # mid-cap, not mega-cap
+
+    def test_large_rupee_company_is_large_cap(self):
+        # TCS-scale ~₹14tn (~$168bn) lands large-cap, not mega-cap.
+        prem = _size_premium(_history(market_cap=14e12, currency="INR"), AssumptionLedger())
+        assert prem == pytest.approx(-0.005)
+
+    def test_unknown_currency_skips_premium(self):
+        prem = _size_premium(_history(market_cap=500e9, currency="XYZ"), AssumptionLedger())
+        assert prem == 0.0
 
 
 class TestHorizonBeta:
