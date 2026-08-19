@@ -328,4 +328,11 @@ def build_report(
             f"filings, and should be verified against the company's own reports."
         )
 
+    # Final QA: citation grounding (#23) and internal consistency (#22). Runs
+    # last, over the fully assembled report, and only speaks when it finds a
+    # problem — surfaced in the limitations above rather than hidden.
+    from .qa import run_qa
+
+    run_qa(report)
+
     return report
