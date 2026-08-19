@@ -34,27 +34,33 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
 - **Terminal-margin methodology** (spec #5/#6): economic maturity band, not a
   clamp to the recent range.
 - **Reproducibility** (spec #22): valuation identical run-to-run.
+- **#4 "What is priced in" table** — reverse-DCF generalised from year-1 growth
+  to four drivers (revenue CAGR, mature operating margin, mature FCF margin,
+  terminal growth). Each solved by inverting the same `run_dcf` one lever at a
+  time, holding the others at base, so both columns are strictly comparable.
+  Levers bounded to the economically possible (margin ≤100%, capex ≥0, terminal
+  growth < WACC); an unreachable lever renders an em-dash + caveat rather than an
+  absurd figure. `valuation/reverse.py::build_priced_in`, models
+  `PricedInRow`/`PricedInComparison`, rendered HTML + PDF. Tests in
+  `tests/test_reverse.py` (round-trip / direction / unreachable). NVDA: growth
+  32.6% and terminal growth 13.1% priced in; margin and FCF unreachable at any
+  ceiling — a sharp SELL exhibit.
 
 ## Next batch (priority order)
 
-1. **#4 "What is priced in" table** — a proper reverse-DCF that solves for the
-   market-implied revenue CAGR, operating margin, FCF margin and terminal
-   growth, shown side-by-side against our base case in one table. Extend
-   `valuation/reverse.py` (currently solves only for year-1 growth). Render as a
-   two-column comparison in the report.
-2. **#17 Quantified risks** — each material risk with probability / financial
+1. **#17 Quantified risks** — each material risk with probability / financial
    impact / valuation impact / early-warning indicator. LLM pass grounded in the
    filings + the numbers; render as a table. Replace the descriptive risk prose.
-3. **#3 Narrative → interpretation** — rewrite `report/sections.py` prompts so
+2. **#3 Narrative → interpretation** — rewrite `report/sections.py` prompts so
    each section follows fact → interpretation → sustainability → investment
    implication, not description. Reduce repetition across sections (#24).
-4. **#16 Segment forecasting** — where segment revenue exists (SEC XBRL has it
+3. **#16 Segment forecasting** — where segment revenue exists (SEC XBRL has it
    for NVDA: Compute & Networking, Graphics), forecast segments and sum to
    total. New `valuation/segments.py`.
-5. **#19/#20 Catalysts + monitoring dashboard** — upcoming catalysts (event /
+4. **#19/#20 Catalysts + monitoring dashboard** — upcoming catalysts (event /
    timing / direction / metric) and a "key things to watch" table
    (current / trend / expected / why it matters). Can extend `report/thesis.py`.
-6. **#11 Management-says vs our-view**, **#13/#14 competitive & moat analysis**,
+5. **#11 Management-says vs our-view**, **#13/#14 competitive & moat analysis**,
    **#23 stricter citation QA**, **#22 full consistency-check pass**.
 
 ## Key files
