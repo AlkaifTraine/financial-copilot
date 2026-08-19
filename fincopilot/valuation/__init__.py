@@ -11,13 +11,15 @@ from .assumptions import derive_inputs
 from .blend import build_blend
 from .comps import build_comps
 from .dcf import run_dcf
-from .reverse import implied_growth
+from .reverse import build_priced_in, implied_growth
 from .models import (
     Assumption,
     AssumptionLedger,
     BlendedValuation,
     CompsResult,
     DCFResult,
+    PricedInComparison,
+    PricedInRow,
     ScenarioAnalysis,
     ScenarioCase,
     SensitivityGrid,
@@ -42,6 +44,8 @@ __all__ = [
     "BlendedValuation",
     "ValuationEstimate",
     "CompsResult",
+    "PricedInComparison",
+    "PricedInRow",
     "run_dcf",
 ]
 
@@ -164,11 +168,12 @@ def value_company(
 
     # -- what the market is pricing in ------------------------------------
     if history.share_price:
+        terminal_margin_value = ledger.value("terminal_margin", inputs.margin_path[-1])
         valuation.market_implied_growth = implied_growth(
             base_revenue=inputs.base_revenue,
             base_year=inputs.base_year,
             horizon=len(inputs.growth_path),
-            terminal_margin=ledger.value("terminal_margin", inputs.margin_path[-1]),
+            terminal_margin=terminal_margin_value,
             current_margin=inputs.margin_path[0],
             tax_rate=inputs.tax_rate,
             depreciation_pct=inputs.depreciation_pct,
@@ -179,6 +184,20 @@ def value_company(
             net_debt=net_debt,
             shares_outstanding=shares,
             target_price=history.share_price,
+        )
+
+        # The full comparison: every driver's market-implied level beside our
+        # base case, each solved by inverting the same DCF one lever at a time.
+        valuation.priced_in = build_priced_in(
+            inputs=inputs,
+            wacc=wacc,
+            net_debt=net_debt,
+            shares_outstanding=shares,
+            terminal_margin=terminal_margin_value,
+            base_dcf=valuation.dcf,
+            share_price=history.share_price,
+            currency=history.currency,
+            implied_year_one_growth=valuation.market_implied_growth,
         )
 
     # -- comparables ------------------------------------------------------

@@ -447,6 +447,41 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             styles["small"],
         ))
 
+    # -- what is priced in (reverse DCF) ----------------------------------
+    if report.priced_in and report.priced_in.get("rows"):
+        pi = report.priced_in
+        price_text = f"{currency} {report.money(pi.get('share_price'))}"
+        story.append(Paragraph("WHAT IS PRICED IN", styles["h2"]))
+        story.append(Paragraph(
+            "A DCF whose fair value sits below the price is easy to dismiss as the model "
+            "being wrong. Inverting it is harder to dismiss: holding every other driver at our "
+            f"base case, we solve for the level of each one that would return today's price of "
+            f"{price_text}. Each row is a single, checkable claim about what the market must "
+            "believe — judge it against the company's own history.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 4))
+
+        rows = [["Driver", "Our base case", f"Priced in at {price_text}", "Gap"]]
+        for row in pi["rows"]:
+            rows.append([
+                row["label"], row["base_display"], row["implied_display"], row["gap_display"],
+            ])
+        widths = [CONTENT_WIDTH * w for w in (0.34, 0.22, 0.28, 0.16)]
+        story.append(_table(rows, widths, styles))
+
+        for row in pi["rows"]:
+            if row.get("note"):
+                story.append(Paragraph(
+                    f"<b>{row['label']}.</b> {row['note']}", styles["small"]
+                ))
+        story.append(Paragraph(
+            "Read together, these are what the price assumes if the market is right about "
+            "everything else. A gap the company has never closed in its own history is the risk "
+            "in owning it here; a dash means the price cannot be reached on that lever alone.",
+            styles["small"],
+        ))
+
     # -- DCF --------------------------------------------------------------
     if report.forecast_table:
         story.append(PageBreak())

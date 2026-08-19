@@ -22,9 +22,11 @@ rate, holding everything else constant.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from .. import config
 from .dcf import decay_path, fade, run_dcf
+from .models import PricedInComparison, PricedInRow
 
 log = logging.getLogger(__name__)
 
@@ -114,3 +116,249 @@ def implied_growth(
             high = midpoint
 
     return (low + high) / 2
+
+
+# ---------------------------------------------------------------------------
+# "What is priced in": a reverse DCF on every driver, not just growth
+# ---------------------------------------------------------------------------
+#
+# implied_growth answers one question — what revenue growth justifies the price?
+# A reader looking at a fair value below the market price has three more: what
+# margin, what cash conversion, what perpetual growth would justify it instead?
+#
+# Each is solved the same way and with the same engine: hold every *other* driver
+# at our base case and solve for the one that lifts (or lowers) the DCF to today's
+# price. Every solve therefore reproduces the base fair value exactly at the base
+# value of its driver, so the "our base case" and "market-implied" columns are
+# strictly comparable — the only thing that changed between them is the one number
+# on that row. The result is a table of testable statements ("the price needs a
+# 55% mature operating margin, versus our 42%") rather than a single verdict.
+
+
+def _solve(value_at: Callable[[float], float], target: float, low: float, high: float) -> float | None:
+    """Bisection for the input in ``[low, high]`` whose DCF equals ``target``.
+
+    Works whether fair value rises or falls in the input (margin rises it, capex
+    lowers it): the orientation is read from the endpoints. Returns ``None`` when
+    the target lies outside the achievable range — which is itself informative,
+    since it means the price cannot be reached on that lever alone.
+    """
+    try:
+        value_low = value_at(low)
+        value_high = value_at(high)
+    except ValueError as exc:
+        log.info("priced-in solve not computable: %s", exc)
+        return None
+
+    increasing = value_high >= value_low
+    reachable_low = min(value_low, value_high)
+    reachable_high = max(value_low, value_high)
+    if not (reachable_low <= target <= reachable_high):
+        return None
+
+    for _ in range(_MAX_ITERATIONS):
+        midpoint = (low + high) / 2
+        if abs(high - low) < _TOLERANCE:
+            return midpoint
+        try:
+            value = value_at(midpoint)
+        except ValueError:
+            return None
+        if (value < target) == increasing:
+            low = midpoint
+        else:
+            high = midpoint
+
+    return (low + high) / 2
+
+
+def _cagr(growth_path: list[float]) -> float:
+    """Compound annual growth rate implied by a per-year growth path."""
+    if not growth_path:
+        return 0.0
+    compound = 1.0
+    for growth in growth_path:
+        compound *= 1 + growth
+    return compound ** (1 / len(growth_path)) - 1
+
+
+def build_priced_in(
+    *,
+    inputs,
+    wacc: float,
+    net_debt: float,
+    shares_outstanding: float,
+    terminal_margin: float,
+    base_dcf,
+    share_price: float,
+    currency: str,
+    implied_year_one_growth: float | None,
+) -> PricedInComparison | None:
+    """Assemble the "what is priced in" comparison for every driver.
+
+    ``inputs`` is the :class:`ForecastInputs` behind the base DCF; ``base_dcf`` is
+    that DCF's :class:`DCFResult`. ``implied_year_one_growth`` is the already-solved
+    reverse-DCF growth (reused so it is not recomputed).
+    """
+    if not share_price or share_price <= 0 or base_dcf is None or not base_dcf.forecast:
+        return None
+
+    horizon = len(inputs.growth_path)
+    year_one_growth = inputs.growth_path[0]
+    current_margin = inputs.margin_path[0]
+    price = share_price
+
+    common = dict(
+        base_revenue=inputs.base_revenue,
+        base_year=inputs.base_year,
+        tax_rate=inputs.tax_rate,
+        depreciation_pct=inputs.depreciation_pct,
+        working_capital_pct=inputs.working_capital_pct,
+        net_debt=net_debt,
+        shares_outstanding=shares_outstanding,
+        wacc=wacc,
+    )
+
+    rows: list[PricedInRow] = []
+
+    # -- 1. revenue growth, expressed as the forecast-period CAGR ---------
+    base_cagr = _cagr(inputs.growth_path)
+    if implied_year_one_growth is not None:
+        implied_path = decay_path(
+            implied_year_one_growth, inputs.terminal_growth, horizon, config.DCF_GROWTH_DECAY
+        )
+        rows.append(PricedInRow(
+            key="revenue_cagr",
+            label=f"Revenue CAGR ({horizon}-year)",
+            unit="%",
+            base_value=base_cagr,
+            implied_value=_cagr(implied_path),
+        ))
+    else:
+        rows.append(PricedInRow(
+            key="revenue_cagr",
+            label=f"Revenue CAGR ({horizon}-year)",
+            unit="%",
+            base_value=base_cagr,
+            implied_value=None,
+            reachable=False,
+            note="Revenue growth alone cannot reach the price within a plausible range.",
+        ))
+
+    # -- 2. mature operating margin --------------------------------------
+    def margin_value(mature_margin: float) -> float:
+        return run_dcf(
+            growth_path=inputs.growth_path,
+            margin_path=fade(current_margin, mature_margin, horizon),
+            terminal_growth=inputs.terminal_growth,
+            capex_pct=inputs.capex_pct,
+            **common,
+        ).fair_value_per_share
+
+    # Capped at 100%: an operating margin above revenue is not a number a
+    # business can post, so if the price is unreachable even there, the honest
+    # statement is that margin alone cannot justify it — not some absurd figure.
+    implied_margin = _solve(margin_value, price, 0.0, 1.0)
+    margin_note = ""
+    if implied_margin is None:
+        margin_note = (
+            "Even a 100%-of-revenue operating margin — the theoretical ceiling — does not "
+            "reach the price; it cannot be justified on margin alone."
+        )
+    elif implied_margin > 0.80:
+        margin_note = "An operating margin almost no company has ever sustained."
+    rows.append(PricedInRow(
+        key="operating_margin",
+        label="Operating margin (mature)",
+        unit="%",
+        base_value=terminal_margin,
+        implied_value=implied_margin,
+        reachable=implied_margin is not None,
+        note=margin_note,
+    ))
+
+    # -- 3. mature free-cash-flow margin ---------------------------------
+    # Solved through capex intensity, the one input that moves the cash margin
+    # one-for-one; the row reports the resulting FCF/revenue, not the capex.
+    final = base_dcf.forecast[-1]
+    base_fcf_margin = final.free_cash_flow / final.revenue if final.revenue else 0.0
+
+    def capex_value(capex_pct: float) -> float:
+        return run_dcf(
+            growth_path=inputs.growth_path,
+            margin_path=inputs.margin_path,
+            terminal_growth=inputs.terminal_growth,
+            capex_pct=capex_pct,
+            **common,
+        ).fair_value_per_share
+
+    # Floor the search at zero capex: a company cannot spend less than nothing to
+    # grow, so zero capex is the ceiling on cash conversion. If the price is
+    # unreachable even there, no plausible cash margin justifies it.
+    implied_capex = _solve(capex_value, price, 0.0, inputs.capex_pct + 1.0)
+    implied_fcf_margin: float | None = None
+    fcf_note = ""
+    if implied_capex is not None:
+        solved = run_dcf(
+            growth_path=inputs.growth_path,
+            margin_path=inputs.margin_path,
+            terminal_growth=inputs.terminal_growth,
+            capex_pct=implied_capex,
+            **common,
+        )
+        solved_final = solved.forecast[-1]
+        implied_fcf_margin = (
+            solved_final.free_cash_flow / solved_final.revenue if solved_final.revenue else None
+        )
+        if implied_fcf_margin is not None and implied_fcf_margin > current_margin:
+            fcf_note = "Exceeds the operating margin itself — it implies negative reinvestment, which no growing business sustains."
+    else:
+        fcf_note = (
+            "Even at zero capital spending — the ceiling on cash conversion — the implied cash "
+            "margin cannot reach the price."
+        )
+    rows.append(PricedInRow(
+        key="fcf_margin",
+        label="FCF margin (mature)",
+        unit="%",
+        base_value=base_fcf_margin,
+        implied_value=implied_fcf_margin,
+        reachable=implied_fcf_margin is not None,
+        note=fcf_note,
+    ))
+
+    # -- 4. terminal (perpetual) growth ----------------------------------
+    # Bounded strictly below WACC: at or above it the Gordon terminal value
+    # diverges, so the search stops a quarter-point short.
+    def terminal_growth_value(terminal_growth: float) -> float:
+        return run_dcf(
+            growth_path=decay_path(year_one_growth, terminal_growth, horizon, config.DCF_GROWTH_DECAY),
+            margin_path=inputs.margin_path,
+            terminal_growth=terminal_growth,
+            capex_pct=inputs.capex_pct,
+            **common,
+        ).fair_value_per_share
+
+    implied_terminal = _solve(terminal_growth_value, price, 0.0, wacc - 0.0025)
+    terminal_note = ""
+    if implied_terminal is None:
+        terminal_note = "Unreachable even at a perpetual rate just below the discount rate."
+    elif implied_terminal > 0.04:
+        terminal_note = "Above long-run GDP growth — it implies the company outgrows the economy forever."
+    rows.append(PricedInRow(
+        key="terminal_growth",
+        label="Terminal growth",
+        unit="%",
+        base_value=inputs.terminal_growth,
+        implied_value=implied_terminal,
+        reachable=implied_terminal is not None,
+        note=terminal_note,
+    ))
+
+    return PricedInComparison(
+        rows=rows,
+        currency=currency,
+        share_price=share_price,
+        dcf_fair_value=base_dcf.fair_value_per_share,
+        horizon=horizon,
+    )

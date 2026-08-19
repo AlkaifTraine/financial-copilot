@@ -192,6 +192,8 @@ def build_report(
         )
         if _consensus is not None:
             report.consensus_target = _consensus.value_per_share
+    if valuation.priced_in and valuation.priced_in.rows:
+        report.priced_in = valuation.priced_in.to_dict()
     if valuation.scenarios and valuation.scenarios.cases:
         report.scenarios = valuation.scenarios.to_dict()
     if valuation.sensitivity:

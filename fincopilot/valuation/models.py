@@ -428,6 +428,84 @@ class BlendedValuation:
 
 
 @dataclass
+class PricedInRow:
+    """One driver, compared between our base case and what the price implies.
+
+    A single reverse-DCF answers "what growth is priced in?"; this generalises
+    it. For each value driver we solve — holding every *other* driver at our base
+    case — for the level of that one driver that makes the DCF equal today's
+    price. The result reads as "if the market is right about everything else, it
+    must believe X about this", which is a checkable claim rather than a bet.
+    """
+
+    key: str
+    label: str
+    unit: str                       # "%"
+    base_value: float
+    implied_value: float | None     # None when the price is unreachable on this lever alone
+    reachable: bool = True
+    note: str = ""                  # economic caveat, e.g. an implied margin above 100%
+
+    def _fmt(self, value: float | None) -> str:
+        if value is None:
+            return "—"
+        if self.unit == "%":
+            return f"{value * 100:.1f}%"
+        return f"{value:,.2f}"
+
+    @property
+    def base_display(self) -> str:
+        return self._fmt(self.base_value)
+
+    @property
+    def implied_display(self) -> str:
+        return self._fmt(self.implied_value)
+
+    @property
+    def gap_display(self) -> str:
+        """Signed distance from our base case to the market-implied level."""
+        if self.implied_value is None:
+            return "—"
+        delta = self.implied_value - self.base_value
+        if self.unit == "%":
+            return f"{delta * 100:+.1f}pp"
+        return f"{delta:+,.2f}"
+
+    def to_dict(self) -> dict:
+        return {
+            **asdict(self),
+            "base_display": self.base_display,
+            "implied_display": self.implied_display,
+            "gap_display": self.gap_display,
+        }
+
+
+@dataclass
+class PricedInComparison:
+    """The full "what is priced in" table: our base case vs the market's price.
+
+    Each row isolates one driver. Together they answer the question a reader of a
+    DCF actually has when the fair value sits below the price — not "is the model
+    right?" but "what would have to be true for the price to be right?".
+    """
+
+    rows: list[PricedInRow] = field(default_factory=list)
+    currency: str = "USD"
+    share_price: float | None = None
+    dcf_fair_value: float | None = None
+    horizon: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "rows": [r.to_dict() for r in self.rows],
+            "currency": self.currency,
+            "share_price": self.share_price,
+            "dcf_fair_value": self.dcf_fair_value,
+            "horizon": self.horizon,
+        }
+
+
+@dataclass
 class Valuation:
     """The complete valuation: DCF, comps, sensitivity, scenarios, and ledger."""
 
@@ -448,6 +526,10 @@ class Valuation:
     # assumption fixed. Reframes a large DCF discount as a testable statement
     # about market expectations rather than a prediction that the market is wrong.
     market_implied_growth: float | None = None
+
+    # The full reverse-DCF comparison: for each driver, what the price implies
+    # vs our base case, shown side by side. Generalises market_implied_growth.
+    priced_in: "PricedInComparison | None" = None
 
     warnings: list[str] = field(default_factory=list)
 
@@ -516,6 +598,7 @@ class Valuation:
             "comps": self.comps.to_dict() if self.comps else None,
             "blended": self.blended.to_dict() if self.blended else None,
             "assumptions": self.assumptions.to_dict(),
+            "priced_in": self.priced_in.to_dict() if self.priced_in else None,
             "share_price": self.share_price,
             "fair_value": self.fair_value,
             "upside": self.upside,

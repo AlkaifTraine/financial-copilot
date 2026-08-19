@@ -107,6 +107,7 @@ class ReportModel:
     scenarios: dict | None = None
     sensitivity: dict | None = None
     comps: dict | None = None
+    priced_in: dict | None = None      # reverse-DCF: what the price implies per driver
 
     charts: dict[str, str] = field(default_factory=dict)     # name -> file path
     sources: list[dict] = field(default_factory=list)

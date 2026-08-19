@@ -338,6 +338,42 @@
   </p>
   {% endif %}
 
+  {# ---- what is priced in (reverse DCF) ---- #}
+  {% if r.priced_in and r.priced_in.rows %}
+  <h2 class="fc-h">What Is Priced In</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    A DCF whose fair value sits below the market price is easy to dismiss as the model
+    being wrong. Inverting it is harder to dismiss: holding every other driver at our base
+    case, we solve for the level of each one that would make the model return today's price
+    of {{ fmt_price(r.priced_in.share_price) }}. Each row is therefore a single, checkable
+    claim about what the market must believe — judge it against the company's own history.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr>
+      <th>Driver</th><th>Our base case</th><th>Priced in at {{ fmt_price(r.priced_in.share_price) }}</th><th>Gap</th>
+    </tr></thead>
+    <tbody>
+    {% for row in r.priced_in.rows %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td>{{ row.base_display }}</td>
+        <td{% if not row.reachable %} style="color:var(--muted);"{% endif %}>{{ row.implied_display }}</td>
+        <td class="{% if row.reachable and row.implied_value is not none and row.implied_value > row.base_value %}v negative{% endif %}">{{ row.gap_display }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% for row in r.priced_in.rows if row.note %}
+  <div class="fc-evidence"><strong>{{ row.label }}.</strong> {{ row.note }}</div>
+  {% endfor %}
+  <p style="font-size:12.5px;color:var(--ink-2);margin-top:8px;">
+    Read together, these are what the price assumes if the market is right about everything
+    else. A gap the company has never closed in its own history is the risk in owning it here;
+    a &ldquo;{{ '—' }}&rdquo; means the price cannot be reached on that lever alone, so it is
+    leaning on the others.
+  </p>
+  {% endif %}
+
   {# ---- valuation ---- #}
   {% if r.forecast_table %}
   <h2 class="fc-h">Discounted Cash Flow</h2>
