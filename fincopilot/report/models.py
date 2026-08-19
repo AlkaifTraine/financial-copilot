@@ -90,6 +90,11 @@ class ReportModel:
     dcf_fair_value: float | None = None
     upside: float | None = None
     market_implied_growth: float | None = None
+    consensus_target: float | None = None   # Wall Street consensus — the market's view
+
+    # The investment thesis — the analytical core, rendered first. Separates
+    # business quality from stock attractiveness and frames market-vs-us.
+    thesis: dict | None = None
 
     kpis: list[KPI] = field(default_factory=list)
     sections: list[Section] = field(default_factory=list)

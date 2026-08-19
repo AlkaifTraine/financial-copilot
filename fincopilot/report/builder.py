@@ -115,36 +115,35 @@ def _kpis(history: FinancialHistory, valuation: Valuation) -> list[KPI]:
             )
         )
 
-    # Lead with the blended (triangulated) value when there is one, and keep the
-    # intrinsic DCF as its own tile beside it so the reader sees both.
-    blended = valuation.blended
-    has_blend = bool(blended and blended.blended_value and len(blended.included) > 1)
-
-    if has_blend:
-        tiles.append(
-            KPI(
-                label="Blended fair value",
-                value=f"{currency} {blended.blended_value:,.2f}",
-                caption=(
-                    f"{blended.upside * 100:+.0f}% vs market"
-                    if blended.upside is not None
-                    else "triangulated"
-                ),
-                tone="positive" if (blended.upside or 0) > 0 else "negative",
-            )
-        )
-
+    # Lead with OUR fair value (the intrinsic DCF); show the Wall Street
+    # consensus beside it as context — "what the market believes" — not as our
+    # own number.
     if valuation.fair_value is not None:
         tiles.append(
             KPI(
-                label="DCF fair value",
+                label="Our fair value (DCF)",
                 value=f"{currency} {valuation.fair_value:,.2f}",
                 caption=(
-                    f"vs {valuation.share_price:,.2f} market"
-                    if valuation.share_price
+                    f"{valuation.upside * 100:+.0f}% vs market"
+                    if valuation.upside is not None
                     else ""
                 ),
                 tone="positive" if (valuation.upside or 0) > 0 else "negative",
+            )
+        )
+
+    blended = valuation.blended
+    consensus = None
+    if blended:
+        consensus = next(
+            (e for e in blended.estimates if e.key == "analyst_consensus"), None
+        )
+    if consensus is not None:
+        tiles.append(
+            KPI(
+                label="Consensus target",
+                value=f"{currency} {consensus.value_per_share:,.2f}",
+                caption="what the market believes",
             )
         )
 
@@ -168,12 +167,15 @@ def build_report(
         exchange=company.exchange,
         sector=company.sector,
         currency=history.currency,
-        # Headline verdict is the blended figure when available, DCF otherwise.
-        rating=valuation.headline_rating,
+        # The headline recommendation is OUR intrinsic view (DCF + scenarios).
+        # The analyst consensus / blended target is shown separately as "what
+        # the market believes" — the counter-view the thesis argues against —
+        # not folded into our own rating.
+        rating=valuation.rating,
         share_price=valuation.share_price,
-        fair_value=valuation.headline_value,
+        fair_value=valuation.fair_value,
         dcf_fair_value=valuation.fair_value,
-        upside=valuation.headline_upside,
+        upside=valuation.upside,
         market_implied_growth=valuation.market_implied_growth,
         warnings=list(valuation.warnings),
     )
@@ -185,6 +187,11 @@ def build_report(
 
     if valuation.blended and valuation.blended.blended_value:
         report.blended = valuation.blended.to_dict()
+        _consensus = next(
+            (e for e in valuation.blended.estimates if e.key == "analyst_consensus"), None
+        )
+        if _consensus is not None:
+            report.consensus_target = _consensus.value_per_share
     if valuation.scenarios and valuation.scenarios.cases:
         report.scenarios = valuation.scenarios.to_dict()
     if valuation.sensitivity:
@@ -207,6 +214,25 @@ def build_report(
     if progress:
         progress("charts", "rendering charts")
     report.charts = chart_builder.build_all(valuation, history, slug=company.slug)
+
+    # Investment thesis — the analytical core, rendered first. Generated from
+    # the computed valuation (scenarios, blend, reverse-DCF) plus management
+    # commentary retrieved from the filings, so the argument is grounded in the
+    # model's own numbers rather than hardcoded.
+    if include_narrative and index is not None and valuation.dcf is not None:
+        if progress:
+            progress("thesis", "writing the investment thesis")
+        from ..retrieve import retrieve
+        from .thesis import generate_thesis
+
+        thesis_context = retrieve(
+            "competitive position moat pricing power margins outlook growth guidance risks",
+            index,
+            top_k=8,
+        ).context_block
+        report.thesis = generate_thesis(
+            company, history, valuation, qualitative_context=thesis_context
+        ).to_dict()
 
     if include_narrative and index is not None:
         report.sections = section_builder.build_all(

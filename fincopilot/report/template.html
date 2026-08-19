@@ -108,6 +108,44 @@
     background: var(--surface-2); border-left: 3px solid var(--accent);
     padding: 10px 14px; margin: 12px 0; font-size: 12.5px; color: var(--ink-2);
   }
+
+  /* ---- investment thesis (first page) ---- */
+  .fc-thesis {
+    border: 1px solid var(--rule); border-left: 4px solid var(--navy); border-radius: 10px;
+    padding: 18px 20px; margin: 8px 0 20px; background: #fbfcfe;
+  }
+  .fc-thesis-head { font-size: 16px; font-weight: 650; color: var(--navy); line-height: 1.4; margin-bottom: 12px; }
+  .fc-quality { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+  .fc-chip {
+    font-size: 11.5px; padding: 4px 11px; border-radius: 999px; background: var(--surface-2);
+    border: 1px solid var(--rule); color: var(--ink);
+  }
+  .fc-chip.positive { background: #e6f4ea; border-color: #b5dcc0; color: var(--positive); }
+  .fc-chip.negative { background: #fdeaea; border-color: #f2c2c2; color: var(--negative); }
+  .fc-quality-note { font-size: 12.5px; color: var(--ink-2); margin: 0 0 12px; }
+  .fc-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0; }
+  .fc-vs .k, .fc-why .k, .fc-cat-risk .k {
+    display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); font-weight: 600; margin-bottom: 3px;
+  }
+  .fc-vs p, .fc-cat-risk p { font-size: 12.5px; color: var(--ink); margin: 0; line-height: 1.5; }
+  .fc-gap { font-size: 12.5px; color: var(--ink); margin: 10px 0; padding: 9px 12px; background: var(--surface-2); border-radius: 7px; }
+  .fc-why { margin: 12px 0 8px; }
+  .fc-why ol { margin: 4px 0 0; padding-left: 20px; }
+  .fc-why li { font-size: 12.5px; margin-bottom: 5px; color: var(--ink); }
+  .fc-cat-risk { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 10px;
+    border-top: 1px solid var(--rule); padding-top: 12px; }
+  .fc-cat-risk .k.up { color: var(--positive); }
+  .fc-cat-risk .k.down { color: var(--negative); }
+  .fc-view { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 8px 0; }
+  .fc-view .col { border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
+  .fc-view .col.bull { border-top: 3px solid var(--positive); }
+  .fc-view .col.bear { border-top: 3px solid var(--negative); }
+  .fc-view h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  .fc-view.bull h4 { color: var(--positive); }
+  .fc-view ul { margin: 0; padding-left: 16px; }
+  .fc-view li { font-size: 12px; margin-bottom: 4px; color: var(--ink-2); }
+  .fc-redteam { background: #fff8ec; border-left: 3px solid #d9a441; padding: 10px 14px; margin: 10px 0; font-size: 12.5px; color: #5f4a1a; }
   .fc-sources li { margin-bottom: 6px; font-size: 12.5px; }
   .fc-sources a { color: var(--accent); word-break: break-all; }
   .fc-evidence { font-size: 11.5px; color: var(--muted); margin-top: 6px; }
@@ -136,11 +174,11 @@
 
   <div class="fc-verdict">
     <div><span class="k">Market price</span><span class="v">{{ fmt_price(r.share_price) }}</span></div>
-    <div><span class="k">{{ 'Blended fair value' if r.blended else 'DCF fair value' }}</span><span class="v">{{ fmt_price(r.fair_value) }}</span></div>
-    {% if r.blended %}
-    <div><span class="k">Intrinsic DCF</span><span class="v">{{ fmt_price(r.dcf_fair_value) }}</span></div>
+    <div><span class="k">Our fair value (DCF)</span><span class="v">{{ fmt_price(r.fair_value) }}</span></div>
+    <div><span class="k">Upside to our value</span><span class="v {{ 'positive' if (r.upside or 0) > 0 else 'negative' }}">{{ r.upside_display }}</span></div>
+    {% if r.consensus_target %}
+    <div><span class="k">Consensus (market)</span><span class="v">{{ fmt_price(r.consensus_target) }}</span></div>
     {% endif %}
-    <div><span class="k">Upside</span><span class="v {{ 'positive' if (r.upside or 0) > 0 else 'negative' }}">{{ r.upside_display }}</span></div>
     {% if r.market_implied_growth is not none %}
     <div><span class="k">Growth priced in</span><span class="v">{{ pct(r.market_implied_growth) }} p.a.</span></div>
     {% endif %}
@@ -158,17 +196,42 @@
   </div>
   {% endif %}
 
+  {% if r.thesis %}
+  {% set t = r.thesis %}
+  <div class="fc-thesis">
+    {% if t.headline %}<div class="fc-thesis-head">{{ t.headline }}</div>{% endif %}
+    <div class="fc-quality">
+      {% if t.business_quality %}<span class="fc-chip"><b>Business quality</b> · {{ t.business_quality }}</span>{% endif %}
+      <span class="fc-chip fc-{{ r.rating_tone }}"><b>Stock</b> · {{ r.rating }}</span>
+    </div>
+    {% if t.business_quality_note %}<p class="fc-quality-note">{{ t.business_quality_note }}</p>{% endif %}
+
+    <div class="fc-vs">
+      {% if t.what_market_prices_in %}<div><span class="k">What the market prices in</span><p>{{ t.what_market_prices_in }}</p></div>{% endif %}
+      {% if t.what_we_expect %}<div><span class="k">What we expect</span><p>{{ t.what_we_expect }}</p></div>{% endif %}
+    </div>
+    {% if t.the_gap %}<p class="fc-gap"><b>The gap.</b> {{ t.the_gap }}</p>{% endif %}
+
+    {% if t.thesis_points %}
+    <div class="fc-why"><span class="k">Why {{ r.rating }}</span>
+      <ol>{% for p in t.thesis_points %}<li>{{ p }}</li>{% endfor %}</ol>
+    </div>
+    {% endif %}
+
+    <div class="fc-cat-risk">
+      {% if t.biggest_catalyst %}<div><span class="k up">Biggest catalyst</span><p>{{ t.biggest_catalyst }}</p></div>{% endif %}
+      {% if t.biggest_risk %}<div><span class="k down">Biggest risk</span><p>{{ t.biggest_risk }}</p></div>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if r.market_implied_growth is not none and r.share_price %}
   <div class="fc-note">
     <strong>Reading the valuation.</strong>
-    {% if r.blended %}
-    Our intrinsic DCF values {{ r.ticker }} at {{ fmt_price(r.dcf_fair_value) }};
-    triangulated with the analyst consensus, the blended fair value is
-    {{ fmt_price(r.fair_value) }}, against a market price of {{ fmt_price(r.share_price) }}.
-    {% else %}
-    The discounted cash flow model values {{ r.ticker }} at {{ fmt_price(r.fair_value) }}
-    against a market price of {{ fmt_price(r.share_price) }}.
-    {% endif %}
+    Our intrinsic DCF values {{ r.ticker }} at {{ fmt_price(r.fair_value) }}, against a market
+    price of {{ fmt_price(r.share_price) }}
+    {%- if r.consensus_target %} and a Wall Street consensus target of {{ fmt_price(r.consensus_target) }}
+    (the market's view, which our thesis weighs against){% endif %}.
     Holding every other assumption fixed, today's price implies first-year revenue growth
     of about {{ pct(r.market_implied_growth) }}, decaying toward the terminal rate. Judge
     that figure against the reported history below rather than treating the rating as a
@@ -220,6 +283,30 @@
     {% endif %}
   {% endif %}
   {% endfor %}
+
+  {# ---- what would change our view (thesis-breakers) ---- #}
+  {% if r.thesis and (r.thesis.bull_triggers or r.thesis.bear_triggers or r.thesis.red_team) %}
+  <h2 class="fc-h">What Would Change Our View</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    The thesis is falsifiable. These are the specific, measurable developments that would move us
+    off the current recommendation — the things to watch after each print.
+  </p>
+  {% if r.thesis.bull_triggers or r.thesis.bear_triggers %}
+  <div class="fc-view">
+    {% if r.thesis.bull_triggers %}
+    <div class="col bull"><h4>More positive if</h4>
+      <ul>{% for x in r.thesis.bull_triggers %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if r.thesis.bear_triggers %}
+    <div class="col bear"><h4>More negative if</h4>
+      <ul>{% for x in r.thesis.bear_triggers %}<li>{{ x }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if r.thesis.red_team %}
+  <div class="fc-redteam"><b>The bear (or bull) case against us.</b> {{ r.thesis.red_team }}</div>
+  {% endif %}
+  {% endif %}
 
   {# ---- valuation triangulation ---- #}
   {% if r.blended and r.blended.estimates|length > 1 %}

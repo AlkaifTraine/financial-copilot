@@ -235,15 +235,14 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                       styles["cell"]),
         ]
 
-    fair_value_label = "Blended fair value" if report.blended else "DCF fair value"
     verdict_cells = [
         stat("Market price", f"{currency} {report.money(report.share_price)}"),
-        stat(fair_value_label, f"{currency} {report.money(report.fair_value)}"),
-        stat("Upside", report.upside_display, upside_colour),
+        stat("Our fair value (DCF)", f"{currency} {report.money(report.fair_value)}"),
+        stat("Upside to our value", report.upside_display, upside_colour),
     ]
-    if report.blended:
+    if report.consensus_target:
         verdict_cells.append(
-            stat("Intrinsic DCF", f"{currency} {report.money(report.dcf_fair_value)}")
+            stat("Consensus (market)", f"{currency} {report.money(report.consensus_target)}")
         )
     elif report.market_implied_growth is not None:
         verdict_cells.append(
@@ -281,20 +280,18 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
 
     # -- how to read ------------------------------------------------------
     if report.market_implied_growth is not None and report.share_price:
-        if report.blended:
-            lead = (
-                f"<b>Reading the valuation.</b> Our intrinsic DCF values {report.ticker} at "
-                f"{currency} {report.money(report.dcf_fair_value)}; triangulated with the "
-                f"analyst consensus, the blended fair value is {currency} "
-                f"{report.money(report.fair_value)}, against a market price of {currency} "
-                f"{report.money(report.share_price)}."
-            )
-        else:
-            lead = (
-                f"<b>Reading the valuation.</b> The model values {report.ticker} at "
-                f"{currency} {report.money(report.fair_value)} against a market price of "
-                f"{currency} {report.money(report.share_price)}."
-            )
+        consensus_bit = (
+            f" and a Wall Street consensus target of {currency} "
+            f"{report.money(report.consensus_target)} (the market's view, which our thesis "
+            f"weighs against)"
+            if report.consensus_target
+            else ""
+        )
+        lead = (
+            f"<b>Reading the valuation.</b> Our intrinsic DCF values {report.ticker} at "
+            f"{currency} {report.money(report.fair_value)}, against a market price of "
+            f"{currency} {report.money(report.share_price)}{consensus_bit}."
+        )
         story.append(Paragraph(
             f"{lead} Holding every other assumption fixed, today's price implies "
             f"first-year revenue growth of about {report.market_implied_growth * 100:.0f}%, "
@@ -302,6 +299,61 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             f"below rather than treating the rating as a forecast.",
             styles["body"],
         ))
+
+    # -- investment thesis (the analytical core) --------------------------
+    thesis = report.thesis
+    if thesis:
+        story.append(Paragraph("INVESTMENT THESIS", styles["h2"]))
+        if thesis.get("headline"):
+            story.append(Paragraph(
+                f'<b>{thesis["headline"]}</b>', styles["standfirst"]
+            ))
+        quality = thesis.get("business_quality")
+        if quality:
+            story.append(Paragraph(
+                f'<b>Business quality:</b> {quality} &nbsp;·&nbsp; '
+                f'<b>Stock:</b> {report.rating}'
+                + (f' — {thesis["business_quality_note"]}' if thesis.get("business_quality_note") else ""),
+                styles["small"],
+            ))
+        for key, lead in (
+            ("what_market_prices_in", "What the market prices in."),
+            ("what_we_expect", "What we expect."),
+            ("the_gap", "The gap."),
+        ):
+            if thesis.get(key):
+                story.append(Paragraph(f"<b>{lead}</b> {thesis[key]}", styles["body"]))
+        if thesis.get("thesis_points"):
+            story.append(Paragraph(f"<b>Why {report.rating}</b>", styles["body"]))
+            story.append(ListFlowable(
+                [ListItem(Paragraph(p, styles["bullet"]), leftIndent=10)
+                 for p in thesis["thesis_points"]],
+                bulletType="1", leftIndent=12,
+            ))
+        cat_risk = []
+        if thesis.get("biggest_catalyst"):
+            cat_risk.append(f"<b>Biggest catalyst.</b> {thesis['biggest_catalyst']}")
+        if thesis.get("biggest_risk"):
+            cat_risk.append(f"<b>Biggest risk.</b> {thesis['biggest_risk']}")
+        for line in cat_risk:
+            story.append(Paragraph(line, styles["body"]))
+
+        if thesis.get("bull_triggers"):
+            story.append(Paragraph("<b>We would turn more positive if:</b>", styles["small"]))
+            story.append(ListFlowable(
+                [ListItem(Paragraph(x, styles["bullet"]), leftIndent=10) for x in thesis["bull_triggers"]],
+                bulletType="bullet", start="–", leftIndent=12, bulletFontSize=7,
+            ))
+        if thesis.get("bear_triggers"):
+            story.append(Paragraph("<b>We would turn more negative if:</b>", styles["small"]))
+            story.append(ListFlowable(
+                [ListItem(Paragraph(x, styles["bullet"]), leftIndent=10) for x in thesis["bear_triggers"]],
+                bulletType="bullet", start="–", leftIndent=12, bulletFontSize=7,
+            ))
+        if thesis.get("red_team"):
+            story.append(Paragraph(
+                f"<b>The case against our view.</b> {thesis['red_team']}", styles["small"]
+            ))
 
     # -- narrative sections -----------------------------------------------
     for section in report.sections:
