@@ -125,60 +125,62 @@ def _equity_risk_premium(company: Company, ledger: AssumptionLedger) -> float:
 
 
 def _beta(history: FinancialHistory, ledger: AssumptionLedger) -> float:
-    """Sensitivity of the stock to the broad market."""
+    """Sensitivity of the stock to the broad market, Blume-adjusted.
+
+    The raw historical beta is corrected toward the market with Blume's
+    adjustment before it enters CAPM: a backward-looking beta reliably
+    overstates the forward beta because betas regress toward 1.0 over time.
+    Left raw, NVIDIA's ~2.2 produced a 16.8% discount rate no analyst uses; the
+    adjustment is the standard fix, not a thumb on the scale.
+    """
     raw = history.beta
 
-    if raw is not None and _BETA_BOUNDS[0] <= raw <= _BETA_BOUNDS[1]:
+    if raw is None:
         ledger.add(
             Assumption(
                 key="beta",
                 label="Beta",
-                value=raw,
+                value=1.0,
                 unit="x",
-                source=SOURCE_MARKET,
-                derivation="Five-year monthly beta versus the local market index",
-                rationale=(
-                    "Beta scales the equity risk premium to this company's own "
-                    "volatility relative to the market."
-                ),
+                source=SOURCE_DEFAULT,
+                derivation="No beta available; market average assumed",
+                rationale="A beta of 1.0 assumes the stock moves with the market.",
             )
         )
-        return raw
+        return 1.0
 
-    if raw is not None:
-        clamped = min(max(raw, _BETA_BOUNDS[0]), _BETA_BOUNDS[1])
-        ledger.add(
-            Assumption(
-                key="beta",
-                label="Beta",
-                value=clamped,
-                unit="x",
-                source=SOURCE_MARKET,
-                derivation=f"Reported beta {raw:.2f}, constrained to {_BETA_BOUNDS}",
-                rationale=(
-                    "The reported beta falls outside the plausible range, which "
-                    "usually indicates a short or illiquid price history rather "
-                    "than genuine risk of that magnitude."
-                ),
-                bounds=_BETA_BOUNDS,
-                clamped=True,
-                raw_value=raw,
-            )
-        )
-        return clamped
+    # Blume adjustment: pull the raw beta toward the market before use.
+    w = config.BETA_BLUME_WEIGHT
+    adjusted = w * raw + (1 - w) * 1.0
+    bounded = min(max(adjusted, _BETA_BOUNDS[0]), _BETA_BOUNDS[1])
+    clamped = bounded != adjusted
+
+    derivation = (
+        f"Five-year raw beta {raw:.2f}, Blume-adjusted "
+        f"({w:.2f} x {raw:.2f} + {1 - w:.2f} x 1.00) = {adjusted:.2f}"
+    )
+    if clamped:
+        derivation += f", then constrained to {_BETA_BOUNDS}"
 
     ledger.add(
         Assumption(
             key="beta",
-            label="Beta",
-            value=1.0,
+            label="Beta (Blume-adjusted)",
+            value=bounded,
             unit="x",
-            source=SOURCE_DEFAULT,
-            derivation="No beta available; market average assumed",
-            rationale="A beta of 1.0 assumes the stock moves with the market.",
+            source=SOURCE_MARKET,
+            derivation=derivation,
+            rationale=(
+                "The raw beta is adjusted toward the market to reflect the "
+                "well-documented tendency of betas to regress toward 1.0 over "
+                "time; this is the standard treatment for a forward discount rate."
+            ),
+            bounds=_BETA_BOUNDS if clamped else None,
+            clamped=clamped,
+            raw_value=raw,
         )
     )
-    return 1.0
+    return bounded
 
 
 def _tax_rate(history: FinancialHistory, company: Company, ledger: AssumptionLedger) -> float:

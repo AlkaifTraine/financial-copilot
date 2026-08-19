@@ -90,7 +90,7 @@ Management commentary and outlook retrieved from the filings:
 Propose three forward assumptions. Ground each in the history and the commentary above; do not invent figures.
 
 1. year_one_revenue_growth - revenue growth for the next fiscal year (decimal, e.g. 0.35)
-2. terminal_operating_margin - the operating margin this business sustains at maturity (decimal)
+2. terminal_operating_margin - the operating margin this business sustains at MATURITY, ~10 years out (decimal). Reason it from economics, not just recent history: competitive intensity, pricing power, product mix, scale limits, and likely normalisation. A company at a peak margin today may well settle below it. Justify the level you choose.
 3. terminal_growth_rate - perpetual growth after the forecast period (decimal, between 0.01 and 0.04; must be below long-run GDP growth)
 
 For each, give a one-sentence rationale citing something specific from the data or commentary.
@@ -267,14 +267,20 @@ def derive_inputs(
     )
 
     # -- terminal margin --------------------------------------------------
-    # Bounded by the *recent* margin regime rather than all available history.
-    # NVIDIA's FY2023 operating margin of 15.7% was a demand-trough anomaly;
-    # including it let the model justify halving a 60% margin to 30% and
-    # licensed a valuation the data does not support.
-    recent_margins = margins[-3:] if len(margins) >= 3 else margins
-    margin_bounds = (
-        (min(recent_margins), max(recent_margins)) if recent_margins else (0.05, 0.40)
+    # The mature-state margin is reasoned economically, not forced into the
+    # recent range. A company at a peak margin can plausibly normalise DOWN over
+    # a decade as competition and mix shift, so the band deliberately allows the
+    # terminal margin below the recent regime. Only two rails apply: a floor at
+    # a fraction of today's margin (an unjustified collapse is still rejected)
+    # and a ceiling at the company's own demonstrated peak (a margin the
+    # business has never posted is a claim a DCF cannot carry).
+    current_margin_now = margins[-1] if margins else mean_margin
+    peak_margin = max(margins) if margins else 0.40
+    margin_floor = max(
+        config.TERMINAL_MARGIN_ABSOLUTE_FLOOR,
+        current_margin_now * config.TERMINAL_MARGIN_FLOOR_FRACTION,
     )
+    margin_bounds = (margin_floor, peak_margin)
     proposed_margin, margin_rationale = _model_value(proposal, "terminal_operating_margin")
 
     if proposed_margin is None:
@@ -286,9 +292,15 @@ def derive_inputs(
     else:
         terminal_margin, margin_clamped = _clamp(proposed_margin, margin_bounds)
         margin_source = SOURCE_MODEL
+        if terminal_margin < current_margin_now:
+            shape = f"normalised down from today's {current_margin_now * 100:.1f}%"
+        else:
+            shape = f"held near today's {current_margin_now * 100:.1f}%"
         margin_derivation = (
-            f"Model estimate {proposed_margin * 100:.1f}%, bounded to the observed "
-            f"range [{margin_bounds[0] * 100:.1f}%, {margin_bounds[1] * 100:.1f}%]"
+            f"Model estimate {proposed_margin * 100:.1f}%, {shape}; kept within a "
+            f"maturity band of [{margin_bounds[0] * 100:.1f}%, {margin_bounds[1] * 100:.1f}%] "
+            f"(floor {config.TERMINAL_MARGIN_FLOOR_FRACTION * 100:.0f}% of current, "
+            f"ceiling the demonstrated peak)"
         )
         raw_margin = proposed_margin if margin_clamped else None
 

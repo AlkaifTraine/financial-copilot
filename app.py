@@ -465,15 +465,67 @@ with valuation_tab:
     else:
         dcf = valuation.dcf
         currency = valuation.currency
+        blended = valuation.blended
+        has_blend = bool(blended and blended.blended_value and len(blended.included) > 1)
+
+        # Lead with the blended (triangulated) figure when there is more than one
+        # source; otherwise the DCF is the headline. Either way it is labelled
+        # for what it is.
+        headline_label = "Blended fair value" if has_blend else "DCF fair value"
+        headline_value = valuation.headline_value
+        headline_upside = valuation.headline_upside
 
         top = st.columns(4)
         top[0].metric("Market price", f"{currency} {valuation.share_price:,.2f}"
                       if valuation.share_price else "-")
-        top[1].metric("DCF fair value", f"{currency} {valuation.fair_value:,.2f}")
-        top[2].metric("Upside", valuation.upside_display
-                      if hasattr(valuation, "upside_display")
-                      else f"{valuation.upside * 100:+.1f}%")
-        top[3].metric("Rating", valuation.rating)
+        top[1].metric(headline_label,
+                      f"{currency} {headline_value:,.2f}" if headline_value else "-")
+        top[2].metric("Upside",
+                      f"{headline_upside * 100:+.1f}%" if headline_upside is not None else "-")
+        top[3].metric("Rating", valuation.headline_rating)
+
+        # -- valuation triangulation (blend) ------------------------------
+        if has_blend:
+            st.markdown("#### How we reach this number")
+            st.caption(
+                "One figure reconciled from several independent valuations. Each source "
+                "is weighted by the confidence it earns — the analyst consensus by how "
+                "many analysts stand behind it — and shown below so the blend is "
+                "auditable, not a black box."
+            )
+
+            src_cols = st.columns(len(blended.estimates))
+            for col, est in zip(src_cols, blended.estimates):
+                with col:
+                    strike = "~~" if not est.included else ""
+                    col.markdown(f"**{est.label}**")
+                    col.markdown(f"### {strike}{currency} {est.value_per_share:,.2f}{strike}")
+                    tag = f"weight {est.weight:.1f}"
+                    if not est.included:
+                        tag = "excluded (outlier)"
+                    col.caption(tag)
+                    if est.detail:
+                        col.caption(est.detail)
+                    if est.url:
+                        col.markdown(f"[source ↗]({est.url})")
+
+            note_cols = st.columns([2, 1])
+            note_cols[0].success(
+                f"**Blended fair value {currency} {blended.blended_value:,.2f}**"
+                + (f"  ·  {blended.upside * 100:+.1f}% vs price" if blended.upside is not None else "")
+                + f"\n\n{blended.method}"
+            )
+            if blended.low is not None and blended.high is not None:
+                note_cols[1].metric(
+                    "Source range",
+                    f"{currency} {blended.low:,.0f} – {blended.high:,.0f}",
+                    delta_color="off",
+                )
+            st.caption(
+                "The intrinsic DCF is our own model; the analyst consensus is the "
+                "market's view. When they disagree, the blend reconciles them rather "
+                "than betting entirely on either."
+            )
 
         if valuation.market_implied_growth is not None:
             st.info(
@@ -485,6 +537,58 @@ with valuation_tab:
                 f"the rating as a forecast.",
                 icon="🔍",
             )
+
+        # -- scenarios (bear / base / bull) -------------------------------
+        scenarios = valuation.scenarios
+        if scenarios and scenarios.cases:
+            st.markdown("#### Scenarios")
+            st.caption(
+                "Three coherent states of the world, not a grid: in each case growth, "
+                "margins, terminal growth and the discount rate move together. The "
+                "bear-to-bull spread is sized from this company's own historical "
+                "volatility."
+            )
+
+            cols = st.columns(len(scenarios.cases))
+            tone = {"bear": "🔻", "base": "▪️", "bull": "🔺"}
+            for col, case in zip(cols, scenarios.cases):
+                with col:
+                    st.markdown(f"**{tone.get(case.key, '')} {case.label}**")
+                    st.markdown(f"### {currency} {case.fair_value_per_share:,.2f}")
+                    weight = f"{case.probability * 100:.0f}% weight"
+                    if case.upside is not None:
+                        st.caption(f"{case.upside * 100:+.0f}% vs price · {weight}")
+                    else:
+                        st.caption(weight)
+
+            band = st.columns(2)
+            band[0].metric(
+                "Probability-weighted value",
+                f"{currency} {scenarios.expected_value:,.2f}",
+                f"{scenarios.expected_upside * 100:+.1f}% vs price"
+                if scenarios.expected_upside is not None
+                else None,
+            )
+            value_range = scenarios.value_range
+            if value_range:
+                band[1].metric(
+                    "Bear – bull range",
+                    f"{currency} {value_range[0]:,.0f} – {value_range[1]:,.0f}",
+                    f"{scenarios.dispersion * 100:.0f}% of base"
+                    if scenarios.dispersion is not None
+                    else None,
+                    delta_color="off",
+                )
+
+            with st.expander("How each scenario is built"):
+                for case in scenarios.cases:
+                    st.markdown(f"**{case.label}** — {case.narrative}")
+                    driver_line = "  ·  ".join(
+                        f"{d.label}: {d.display}"
+                        + (f" ({d.delta_display})" if d.delta_display and case.key != "base" else "")
+                        for d in case.drivers
+                    )
+                    st.caption(driver_line)
 
         st.markdown("#### Assumptions")
         st.caption(

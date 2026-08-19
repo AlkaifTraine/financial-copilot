@@ -4,20 +4,27 @@ from __future__ import annotations
 
 import logging
 
+from .. import config
 from ..fundamentals import FinancialHistory
 from ..resolve import Company
 from .assumptions import derive_inputs
+from .blend import build_blend
 from .comps import build_comps
 from .dcf import run_dcf
 from .reverse import implied_growth
 from .models import (
     Assumption,
     AssumptionLedger,
+    BlendedValuation,
     CompsResult,
     DCFResult,
+    ScenarioAnalysis,
+    ScenarioCase,
     SensitivityGrid,
     Valuation,
+    ValuationEstimate,
 )
+from .scenarios import build_scenarios
 from .sensitivity import build_grid
 from .wacc import compute_wacc
 
@@ -30,6 +37,10 @@ __all__ = [
     "AssumptionLedger",
     "DCFResult",
     "SensitivityGrid",
+    "ScenarioAnalysis",
+    "ScenarioCase",
+    "BlendedValuation",
+    "ValuationEstimate",
     "CompsResult",
     "run_dcf",
 ]
@@ -135,6 +146,22 @@ def value_company(
         shares_outstanding=shares,
     )
 
+    # -- scenarios (bear / base / bull) -----------------------------------
+    # A single fair value is a point estimate dressed up as a fact. The scenario
+    # set moves the value drivers together into three coherent worlds, sized
+    # from the company's own history, and reports the range and its probability-
+    # weighted centre alongside the base case.
+    valuation.scenarios = build_scenarios(
+        inputs=inputs,
+        history=history,
+        base_wacc=wacc,
+        base_terminal_margin=ledger.value("terminal_margin", inputs.margin_path[-1]),
+        net_debt=net_debt,
+        shares_outstanding=shares,
+        share_price=history.share_price,
+        currency=history.currency,
+    )
+
     # -- what the market is pricing in ------------------------------------
     if history.share_price:
         valuation.market_implied_growth = implied_growth(
@@ -161,7 +188,68 @@ def value_company(
         shares_outstanding=shares,
     )
 
+    # -- triangulation (blend) --------------------------------------------
+    # Reconcile our intrinsic DCF with the analyst consensus into one headline
+    # figure, weighting each source by the confidence it earns. This is what the
+    # product leads with; the DCF remains visible as one input.
+    valuation.blended = build_blend(
+        dcf_value=valuation.dcf.fair_value_per_share,
+        history=history,
+        ticker=company.ticker,
+        share_price=history.share_price,
+        currency=history.currency,
+    )
+
     # -- diagnostics ------------------------------------------------------
+    # A wide gap between our intrinsic DCF and the street's consensus is not a
+    # failure — it is the whole reason to triangulate — but the reader should be
+    # told the blend is reconciling two genuinely different views.
+    blended = valuation.blended
+    if blended and valuation.dcf.fair_value_per_share > 0:
+        consensus = next(
+            (e for e in blended.estimates if e.key == "analyst_consensus"), None
+        )
+        if consensus is not None:
+            gap = consensus.value_per_share / valuation.dcf.fair_value_per_share - 1
+            if abs(gap) > config.BLEND_DIVERGENCE_FLAG:
+                direction = "above" if gap > 0 else "below"
+                valuation.warnings.append(
+                    f"The analyst consensus ({history.currency} "
+                    f"{consensus.value_per_share:,.2f}) sits {abs(gap) * 100:.0f}% "
+                    f"{direction} our intrinsic DCF ({history.currency} "
+                    f"{valuation.dcf.fair_value_per_share:,.2f}). The blended value "
+                    f"reconciles the two; read it as a triangulation, not a precise number."
+                )
+
+    # -- diagnostics (scenarios) ------------------------------------------
+    # Where the current price sits relative to the whole scenario range is a
+    # sharper read than upside to a single point: a price above even the bull
+    # case, or below even the bear case, is a specific and checkable claim.
+    scenarios = valuation.scenarios
+    if scenarios and history.share_price:
+        value_range = scenarios.value_range
+        if value_range:
+            low, high = value_range
+            if history.share_price > high:
+                valuation.warnings.append(
+                    f"At {history.currency} {history.share_price:,.2f} the price sits "
+                    f"above even the bull case ({history.currency} {high:,.2f}); the "
+                    f"market is pricing assumptions more optimistic than any of the "
+                    f"three scenarios."
+                )
+            elif history.share_price < low:
+                valuation.warnings.append(
+                    f"At {history.currency} {history.share_price:,.2f} the price sits "
+                    f"below even the bear case ({history.currency} {low:,.2f}); the "
+                    f"market is pricing in worse than the downside scenario models."
+                )
+        if scenarios.dispersion is not None and scenarios.dispersion > 1.5:
+            valuation.warnings.append(
+                f"The bull-to-bear range spans {scenarios.dispersion * 100:.0f}% of the "
+                f"base fair value, so the valuation depends heavily on which scenario "
+                f"plays out and should be read as a range rather than a point."
+            )
+
     if valuation.dcf.terminal_value_share > 0.80:
         valuation.warnings.append(
             f"{valuation.dcf.terminal_value_share:.0%} of enterprise value comes "

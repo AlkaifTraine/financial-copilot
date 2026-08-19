@@ -235,12 +235,17 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                       styles["cell"]),
         ]
 
+    fair_value_label = "Blended fair value" if report.blended else "DCF fair value"
     verdict_cells = [
         stat("Market price", f"{currency} {report.money(report.share_price)}"),
-        stat("DCF fair value", f"{currency} {report.money(report.fair_value)}"),
+        stat(fair_value_label, f"{currency} {report.money(report.fair_value)}"),
         stat("Upside", report.upside_display, upside_colour),
     ]
-    if report.market_implied_growth is not None:
+    if report.blended:
+        verdict_cells.append(
+            stat("Intrinsic DCF", f"{currency} {report.money(report.dcf_fair_value)}")
+        )
+    elif report.market_implied_growth is not None:
         verdict_cells.append(
             stat("Growth priced in", f"{report.market_implied_growth * 100:.0f}% p.a.")
         )
@@ -276,14 +281,25 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
 
     # -- how to read ------------------------------------------------------
     if report.market_implied_growth is not None and report.share_price:
+        if report.blended:
+            lead = (
+                f"<b>Reading the valuation.</b> Our intrinsic DCF values {report.ticker} at "
+                f"{currency} {report.money(report.dcf_fair_value)}; triangulated with the "
+                f"analyst consensus, the blended fair value is {currency} "
+                f"{report.money(report.fair_value)}, against a market price of {currency} "
+                f"{report.money(report.share_price)}."
+            )
+        else:
+            lead = (
+                f"<b>Reading the valuation.</b> The model values {report.ticker} at "
+                f"{currency} {report.money(report.fair_value)} against a market price of "
+                f"{currency} {report.money(report.share_price)}."
+            )
         story.append(Paragraph(
-            f"<b>Reading the valuation.</b> The model values {report.ticker} at "
-            f"{currency} {report.money(report.fair_value)} against a market price of "
-            f"{currency} {report.money(report.share_price)}. Holding every other "
-            f"assumption fixed, today's price implies first-year revenue growth of about "
-            f"{report.market_implied_growth * 100:.0f}%, decaying toward the terminal "
-            f"rate. Judge that against the reported history below rather than treating "
-            f"the rating as a forecast.",
+            f"{lead} Holding every other assumption fixed, today's price implies "
+            f"first-year revenue growth of about {report.market_implied_growth * 100:.0f}%, "
+            f"decaying toward the terminal rate. Judge that against the reported history "
+            f"below rather than treating the rating as a forecast.",
             styles["body"],
         ))
 
@@ -335,6 +351,50 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                           Paragraph(f"Figures in {currency}. Source: company filings.",
                                     styles["small"])]
 
+    # -- valuation triangulation ------------------------------------------
+    if report.blended and len(report.blended.get("estimates", [])) > 1:
+        bl = report.blended
+        story.append(PageBreak())
+        story.append(Paragraph("HOW WE REACH THE NUMBER", styles["h2"]))
+        story.append(Paragraph(
+            "The headline figure reconciles several independent valuations, each weighted "
+            "by the confidence it earns — the analyst consensus by how many analysts stand "
+            "behind it. Every source is shown so the blend is auditable: our intrinsic DCF "
+            "is one voice, the market's consensus another.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 4))
+
+        rows = [["Source", "Value / share", "Weight", "Detail"]]
+        for est in bl["estimates"]:
+            value_text = f"{currency} {est['value_per_share']:,.2f}"
+            if not est["included"]:
+                value_text += " (excluded)"
+            rows.append([
+                est["label"], value_text, f"{est['weight']:.1f}",
+                est.get("detail") or est.get("source_name") or "",
+            ])
+        widths = [CONTENT_WIDTH * w for w in (0.22, 0.20, 0.10, 0.48)]
+        table = _table(rows, widths, styles)
+        table.setStyle(TableStyle([("ALIGN", (3, 0), (-1, -1), "LEFT")]))
+        story.append(table)
+
+        range_text = ""
+        if bl.get("low") is not None and bl.get("high") is not None:
+            range_text = (
+                f" Reconciled from {currency} {bl['low']:,.2f} to "
+                f"{currency} {bl['high']:,.2f} across sources."
+            )
+        upside_text = (
+            f" ({bl['upside'] * 100:+.1f}% vs price)"
+            if bl.get("upside") is not None else ""
+        )
+        story.append(Paragraph(
+            f"<b>Blended fair value {currency} {bl['blended_value']:,.2f}{upside_text}.</b>"
+            f"{range_text}",
+            styles["small"],
+        ))
+
     # -- DCF --------------------------------------------------------------
     if report.forecast_table:
         story.append(PageBreak())
@@ -348,6 +408,59 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             ])
         widths = [CONTENT_WIDTH * w for w in (0.14, 0.17, 0.14, 0.17, 0.19, 0.19)]
         story.append(_table(rows, widths, styles))
+
+    # -- scenarios --------------------------------------------------------
+    if report.scenarios and report.scenarios.get("cases"):
+        sc = report.scenarios
+        story.append(Paragraph("SCENARIOS: BEAR, BASE, BULL", styles["h2"]))
+        story.append(Paragraph(
+            "Three coherent states of the world. Unlike the sensitivity grid, each "
+            "scenario moves growth, margin, terminal growth and the discount rate "
+            "<b>together</b>. The bear-to-bull spread is sized from this company's own "
+            "historical volatility, not a fixed percentage.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 4))
+
+        rows = [["Scenario", "Yr-1 growth", "Term. margin", "Term. growth",
+                 "WACC", "Fair value", "vs price", "Weight"]]
+        for case in sc["cases"]:
+            drivers = case["drivers"]
+            upside = case.get("upside")
+            rows.append([
+                case["label"],
+                _pct(drivers[0]["value"]),
+                _pct(drivers[1]["value"]),
+                _pct(drivers[2]["value"]),
+                _pct(drivers[3]["value"]),
+                f"{currency} {case['fair_value_per_share']:,.2f}",
+                f"{upside * 100:+.0f}%" if upside is not None else "-",
+                f"{case['probability'] * 100:.0f}%",
+            ])
+        widths = [CONTENT_WIDTH * w for w in (0.14, 0.13, 0.13, 0.13, 0.10, 0.16, 0.11, 0.10)]
+        story.append(_table(rows, widths, styles))
+
+        range_text = ""
+        if sc.get("value_range"):
+            low, high = sc["value_range"]
+            range_text = f" Range {currency} {low:,.2f} to {currency} {high:,.2f}"
+            if sc.get("dispersion") is not None:
+                range_text += f", a spread of {sc['dispersion'] * 100:.0f}% of the base value"
+            range_text += "."
+        weighted = (
+            f" ({sc['expected_upside'] * 100:+.1f}% vs price)"
+            if sc.get("expected_upside") is not None else ""
+        )
+        story.append(Paragraph(
+            f"<b>Probability-weighted value {currency} {sc['expected_value']:,.2f}"
+            f"{weighted}.</b>{range_text} Read as a range, not a point.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 3))
+        for case in sc["cases"]:
+            story.append(Paragraph(
+                f"<b>{case['label']}.</b> {case['narrative']}", styles["small"]
+            ))
 
     # -- assumptions ------------------------------------------------------
     if report.assumptions:

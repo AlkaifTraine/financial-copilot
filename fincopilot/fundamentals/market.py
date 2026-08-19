@@ -116,12 +116,25 @@ def fetch_market_data(company: Company) -> dict:
         or info.get("previousClose")
     )
 
+    opinion_count = info.get("numberOfAnalystOpinions")
+    try:
+        opinion_count = int(opinion_count) if opinion_count is not None else None
+    except (TypeError, ValueError):
+        opinion_count = None
+
     return {
         "share_price": _clean(price),
         "shares_outstanding": _clean(info.get("sharesOutstanding")),
         "market_cap": _clean(info.get("marketCap")),
         "beta": _clean(info.get("beta")),
         "currency": info.get("currency") or company.currency,
+        # Analyst price targets. Pulled from the same .info payload so no extra
+        # network round-trip is spent — they ride along with price and beta.
+        "analyst_target_mean": _clean(info.get("targetMeanPrice")),
+        "analyst_target_median": _clean(info.get("targetMedianPrice")),
+        "analyst_target_high": _clean(info.get("targetHighPrice")),
+        "analyst_target_low": _clean(info.get("targetLowPrice")),
+        "analyst_opinion_count": opinion_count,
     }
 
 
@@ -175,6 +188,12 @@ def attach_market_data(history: FinancialHistory, company: Company) -> None:
     history.shares_outstanding = data.get("shares_outstanding")
     history.market_cap = data.get("market_cap")
     history.beta = data.get("beta")
+
+    history.analyst_target_mean = data.get("analyst_target_mean")
+    history.analyst_target_median = data.get("analyst_target_median")
+    history.analyst_target_high = data.get("analyst_target_high")
+    history.analyst_target_low = data.get("analyst_target_low")
+    history.analyst_opinion_count = data.get("analyst_opinion_count")
 
     # A history sourced from XBRL is always in USD; the quote may not be.
     if data.get("currency") and history.source != "sec_xbrl":

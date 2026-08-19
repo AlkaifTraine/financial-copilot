@@ -124,6 +124,15 @@ class FinancialHistory:
     market_cap: float | None = None
     beta: float | None = None
 
+    # Wall Street consensus price targets, aggregated across the analysts who
+    # cover the stock. An external, market-based valuation the blend triangulates
+    # our intrinsic DCF against. All in the quote currency.
+    analyst_target_mean: float | None = None
+    analyst_target_median: float | None = None
+    analyst_target_high: float | None = None
+    analyst_target_low: float | None = None
+    analyst_opinion_count: int | None = None
+
     notes: list[str] = field(default_factory=list)
 
     # -- access -----------------------------------------------------------

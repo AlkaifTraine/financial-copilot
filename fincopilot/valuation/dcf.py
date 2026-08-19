@@ -131,7 +131,7 @@ def run_dcf(
     return result
 
 
-def decay_path(start: float, end: float, periods: int, decay: float = 0.55) -> list[float]:
+def decay_path(start: float, end: float, periods: int, decay: float = 0.70) -> list[float]:
     """Growth decaying geometrically from ``start`` toward ``end``.
 
     Used for revenue growth, where a linear fade is badly wrong over a long
@@ -142,8 +142,10 @@ def decay_path(start: float, end: float, periods: int, decay: float = 0.55) -> l
     healthier the more the explicit forecast inflated.
 
     Geometric decay matches how high growth actually behaves: it falls fastest
-    early, as the base effect bites, then flattens. The same 65% start reaches
-    about 4x cumulative growth over ten years instead of 17x.
+    early, as the base effect bites, then flattens. At the default decay the
+    same 65% start reaches about 7x cumulative growth over ten years instead of
+    17x — long enough to credit a genuine multi-year compounder without
+    forecasting it to swallow the economy.
 
     Margins keep the linear :func:`fade` — a margin genuinely does trend toward
     its steady state roughly linearly, and it is bounded anyway.

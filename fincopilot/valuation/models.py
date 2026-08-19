@@ -210,8 +210,226 @@ class CompsResult:
 
 
 @dataclass
+class ScenarioDriver:
+    """One value driver as it is set in a single scenario.
+
+    Carried so the report can show *why* a case differs from the base — not
+    just that the number moved, but which lever moved it and by how much.
+    """
+
+    key: str
+    label: str
+    value: float
+    unit: str                       # "%", "x"
+    base_value: float | None = None
+
+    def _fmt(self, value: float | None) -> str:
+        if value is None:
+            return "-"
+        if self.unit == "%":
+            return f"{value * 100:.1f}%"
+        if self.unit == "x":
+            return f"{value:.2f}x"
+        return f"{value:,.2f}"
+
+    @property
+    def display(self) -> str:
+        return self._fmt(self.value)
+
+    @property
+    def delta_display(self) -> str:
+        """Signed move from the base case, in percentage points where relevant."""
+        if self.base_value is None:
+            return ""
+        delta = self.value - self.base_value
+        if self.unit == "%":
+            return f"{delta * 100:+.1f}pp"
+        if self.unit == "x":
+            return f"{delta:+.2f}x"
+        return f"{delta:+,.2f}"
+
+    def to_dict(self) -> dict:
+        return {
+            **asdict(self),
+            "display": self.display,
+            "delta_display": self.delta_display,
+        }
+
+
+@dataclass
+class ScenarioCase:
+    """One coherent state of the world and the value it implies.
+
+    A scenario is not a grid cell: the drivers move *together* in a way that
+    tells a single story (demand softens, so growth and margins fall and the
+    market demands a higher return, all at once). Each case therefore carries
+    both its driver settings and its resulting per-share value.
+    """
+
+    key: str                        # "bear" | "base" | "bull"
+    label: str
+    probability: float
+    narrative: str
+
+    drivers: list[ScenarioDriver] = field(default_factory=list)
+
+    fair_value_per_share: float = 0.0
+    enterprise_value: float = 0.0
+    equity_value: float = 0.0
+    terminal_value_share: float = 0.0
+
+    # Fractional return from the current price to this case's fair value.
+    upside: float | None = None
+
+    def to_dict(self) -> dict:
+        payload = asdict(self)
+        payload["drivers"] = [d.to_dict() for d in self.drivers]
+        return payload
+
+
+@dataclass
+class ScenarioAnalysis:
+    """The bear / base / bull set, plus what they say jointly."""
+
+    cases: list[ScenarioCase] = field(default_factory=list)
+    currency: str = "USD"
+    share_price: float | None = None
+
+    # Probability-weighted fair value across the three cases. Reported as an
+    # expectation, never as a point forecast: the spread beside it is the
+    # honest part of the answer.
+    expected_value: float = 0.0
+    expected_upside: float | None = None
+
+    def case(self, key: str) -> ScenarioCase | None:
+        return next((c for c in self.cases if c.key == key), None)
+
+    @property
+    def bear(self) -> ScenarioCase | None:
+        return self.case("bear")
+
+    @property
+    def base(self) -> ScenarioCase | None:
+        return self.case("base")
+
+    @property
+    def bull(self) -> ScenarioCase | None:
+        return self.case("bull")
+
+    @property
+    def value_range(self) -> tuple[float, float] | None:
+        """(low, high) per-share fair value across the cases."""
+        values = [c.fair_value_per_share for c in self.cases if c.fair_value_per_share]
+        if not values:
+            return None
+        return (min(values), max(values))
+
+    @property
+    def dispersion(self) -> float | None:
+        """Bull-minus-bear spread as a multiple of the base value.
+
+        A compact read on how much the valuation depends on which world you
+        believe you are in. A dispersion of 1.5 means the bull case is worth
+        150% of the base *more* than the bear case — a wide, assumption-driven
+        range that the reader should weigh accordingly.
+        """
+        base = self.base
+        rng = self.value_range
+        if not base or not base.fair_value_per_share or not rng:
+            return None
+        return (rng[1] - rng[0]) / base.fair_value_per_share
+
+    def to_dict(self) -> dict:
+        payload = asdict(self)
+        payload["cases"] = [c.to_dict() for c in self.cases]
+        payload["value_range"] = self.value_range
+        payload["dispersion"] = self.dispersion
+        return payload
+
+
+@dataclass
+class ValuationEstimate:
+    """One independent per-share valuation, from one method or source.
+
+    The blend is only as honest as its inputs are visible, so every estimate
+    carries where it came from, what it is worth, how much weight it was given,
+    and — when it was thrown out as an outlier — why.
+    """
+
+    key: str                        # "dcf" | "analyst_consensus" | ...
+    label: str
+    source_type: str                # "model" | "analyst" | "comps" | "web"
+    value_per_share: float
+    weight: float
+    currency: str = "USD"
+
+    source_name: str = ""           # e.g. "Wall Street consensus (yfinance)"
+    url: str | None = None          # a page a reader can open to check it
+    as_of: str | None = None
+    detail: str = ""                # e.g. "Median of 58 analysts; USD 150–260"
+
+    included: bool = True           # False when rejected from the blend
+    exclude_reason: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class BlendedValuation:
+    """Several independent valuations reconciled into one figure."""
+
+    estimates: list[ValuationEstimate] = field(default_factory=list)
+    currency: str = "USD"
+    share_price: float | None = None
+
+    blended_value: float = 0.0
+    method: str = ""                # human description of how it was combined
+
+    # Range across the estimates that were actually blended.
+    low: float | None = None
+    high: float | None = None
+
+    @property
+    def included(self) -> list[ValuationEstimate]:
+        return [e for e in self.estimates if e.included]
+
+    @property
+    def excluded(self) -> list[ValuationEstimate]:
+        return [e for e in self.estimates if not e.included]
+
+    @property
+    def upside(self) -> float | None:
+        """Fractional upside from the current price to the blended value."""
+        if not self.share_price or not self.blended_value:
+            return None
+        return self.blended_value / self.share_price - 1
+
+    @property
+    def rating(self) -> str:
+        """Rating derived from the blended value, on the same thresholds as the DCF."""
+        from .. import config
+
+        upside = self.upside
+        if upside is None:
+            return "NOT RATED"
+        if upside >= config.RATING_THRESHOLDS["BUY"]:
+            return "BUY"
+        if upside >= config.RATING_THRESHOLDS["HOLD"]:
+            return "HOLD"
+        return "SELL"
+
+    def to_dict(self) -> dict:
+        payload = asdict(self)
+        payload["estimates"] = [e.to_dict() for e in self.estimates]
+        payload["upside"] = self.upside
+        payload["rating"] = self.rating
+        return payload
+
+
+@dataclass
 class Valuation:
-    """The complete valuation: DCF, comps, sensitivity, and the ledger."""
+    """The complete valuation: DCF, comps, sensitivity, scenarios, and ledger."""
 
     ticker: str
     company_name: str
@@ -219,7 +437,9 @@ class Valuation:
 
     dcf: DCFResult | None = None
     sensitivity: SensitivityGrid | None = None
+    scenarios: ScenarioAnalysis | None = None
     comps: CompsResult | None = None
+    blended: BlendedValuation | None = None
     assumptions: AssumptionLedger = field(default_factory=AssumptionLedger)
 
     share_price: float | None = None
@@ -237,10 +457,34 @@ class Valuation:
 
     @property
     def upside(self) -> float | None:
-        """Fractional upside from the current price to fair value."""
+        """Fractional upside from the current price to the DCF fair value."""
         if not self.share_price or not self.fair_value:
             return None
         return self.fair_value / self.share_price - 1
+
+    # -- headline (blended if available, else DCF) ------------------------
+    # The figure the product leads with. A DCF alone reads as "the market is
+    # wrong"; the blend reconciles it with the analyst consensus into a single
+    # number a reader can act on. When no blend could be built (no analyst
+    # coverage), the headline falls back to the DCF so nothing is ever blank.
+
+    @property
+    def headline_value(self) -> float | None:
+        if self.blended and self.blended.blended_value:
+            return self.blended.blended_value
+        return self.fair_value
+
+    @property
+    def headline_upside(self) -> float | None:
+        if not self.share_price or not self.headline_value:
+            return None
+        return self.headline_value / self.share_price - 1
+
+    @property
+    def headline_rating(self) -> str:
+        if self.blended and self.blended.blended_value:
+            return self.blended.rating
+        return self.rating
 
     @property
     def rating(self) -> str:
@@ -268,11 +512,16 @@ class Valuation:
             "currency": self.currency,
             "dcf": self.dcf.to_dict() if self.dcf else None,
             "sensitivity": self.sensitivity.to_dict() if self.sensitivity else None,
+            "scenarios": self.scenarios.to_dict() if self.scenarios else None,
             "comps": self.comps.to_dict() if self.comps else None,
+            "blended": self.blended.to_dict() if self.blended else None,
             "assumptions": self.assumptions.to_dict(),
             "share_price": self.share_price,
             "fair_value": self.fair_value,
             "upside": self.upside,
             "rating": self.rating,
+            "headline_value": self.headline_value,
+            "headline_upside": self.headline_upside,
+            "headline_rating": self.headline_rating,
             "warnings": self.warnings,
         }

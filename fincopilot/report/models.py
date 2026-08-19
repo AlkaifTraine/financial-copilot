@@ -80,10 +80,14 @@ class ReportModel:
     sector: str | None = None
     currency: str = "USD"
 
-    # Headline verdict, all computed upstream.
+    # Headline verdict, all computed upstream. ``fair_value`` is the headline
+    # figure the report leads with — the blended value when a triangulation was
+    # built, otherwise the DCF. ``dcf_fair_value`` always holds the intrinsic
+    # DCF so the two can be shown side by side.
     rating: str = "NOT RATED"
     share_price: float | None = None
     fair_value: float | None = None
+    dcf_fair_value: float | None = None
     upside: float | None = None
     market_implied_growth: float | None = None
 
@@ -94,6 +98,8 @@ class ReportModel:
     financial_table: list[dict] = field(default_factory=list)
     forecast_table: list[dict] = field(default_factory=list)
     assumptions: list[dict] = field(default_factory=list)
+    blended: dict | None = None
+    scenarios: dict | None = None
     sensitivity: dict | None = None
     comps: dict | None = None
 

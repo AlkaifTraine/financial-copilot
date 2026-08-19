@@ -130,13 +130,16 @@
     </div>
     <div class="fc-rating {{ r.rating_tone }}">
       <div class="label">{{ r.rating }}</div>
-      <div class="sub">DCF-derived</div>
+      <div class="sub">{{ 'Blended' if r.blended else 'DCF-derived' }}</div>
     </div>
   </div>
 
   <div class="fc-verdict">
     <div><span class="k">Market price</span><span class="v">{{ fmt_price(r.share_price) }}</span></div>
-    <div><span class="k">DCF fair value</span><span class="v">{{ fmt_price(r.fair_value) }}</span></div>
+    <div><span class="k">{{ 'Blended fair value' if r.blended else 'DCF fair value' }}</span><span class="v">{{ fmt_price(r.fair_value) }}</span></div>
+    {% if r.blended %}
+    <div><span class="k">Intrinsic DCF</span><span class="v">{{ fmt_price(r.dcf_fair_value) }}</span></div>
+    {% endif %}
     <div><span class="k">Upside</span><span class="v {{ 'positive' if (r.upside or 0) > 0 else 'negative' }}">{{ r.upside_display }}</span></div>
     {% if r.market_implied_growth is not none %}
     <div><span class="k">Growth priced in</span><span class="v">{{ pct(r.market_implied_growth) }} p.a.</span></div>
@@ -157,12 +160,19 @@
 
   {% if r.market_implied_growth is not none and r.share_price %}
   <div class="fc-note">
-    <strong>Reading the valuation.</strong> The discounted cash flow model values
-    {{ r.ticker }} at {{ fmt_price(r.fair_value) }} against a market price of
-    {{ fmt_price(r.share_price) }}. Holding every other assumption fixed, today's price
-    implies first-year revenue growth of about {{ pct(r.market_implied_growth) }}, decaying
-    toward the terminal rate. Judge that figure against the reported history below rather
-    than treating the rating as a forecast.
+    <strong>Reading the valuation.</strong>
+    {% if r.blended %}
+    Our intrinsic DCF values {{ r.ticker }} at {{ fmt_price(r.dcf_fair_value) }};
+    triangulated with the analyst consensus, the blended fair value is
+    {{ fmt_price(r.fair_value) }}, against a market price of {{ fmt_price(r.share_price) }}.
+    {% else %}
+    The discounted cash flow model values {{ r.ticker }} at {{ fmt_price(r.fair_value) }}
+    against a market price of {{ fmt_price(r.share_price) }}.
+    {% endif %}
+    Holding every other assumption fixed, today's price implies first-year revenue growth
+    of about {{ pct(r.market_implied_growth) }}, decaying toward the terminal rate. Judge
+    that figure against the reported history below rather than treating the rating as a
+    forecast.
   </div>
   {% endif %}
 
@@ -211,6 +221,36 @@
   {% endif %}
   {% endfor %}
 
+  {# ---- valuation triangulation ---- #}
+  {% if r.blended and r.blended.estimates|length > 1 %}
+  <h2 class="fc-h">How We Reach the Number</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    The headline figure is not a single model's output but a reconciliation of several
+    independent valuations. Each source is weighted by the confidence it earns — the
+    analyst consensus by how many analysts stand behind it — and shown here so the blend
+    is auditable. Our intrinsic DCF is one voice; the market's consensus is another.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr><th>Source</th><th>Value / share</th><th>Weight</th><th>Detail</th><th>Link</th></tr></thead>
+    <tbody>
+    {% for e in r.blended.estimates %}
+      <tr{% if not e.included %} style="color:var(--muted);"{% endif %}>
+        <td>{{ e.label }}</td>
+        <td>{{ fmt_price(e.value_per_share) }}{% if not e.included %} (excluded){% endif %}</td>
+        <td>{{ '%.1f'|format(e.weight) }}</td>
+        <td>{{ e.detail or e.source_name }}</td>
+        <td>{% if e.url %}<a href="{{ e.url }}">source</a>{% else %}&ndash;{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p style="font-size:13px;margin-top:10px;">
+    <strong>Blended fair value {{ fmt_price(r.blended.blended_value) }}</strong>{% if r.blended.upside is not none %}
+    ({{ '%+.1f'|format(r.blended.upside * 100) }}% vs price){% endif %}.
+    Reconciled from {{ fmt_price(r.blended.low) }} to {{ fmt_price(r.blended.high) }} across sources.
+  </p>
+  {% endif %}
+
   {# ---- valuation ---- #}
   {% if r.forecast_table %}
   <h2 class="fc-h">Discounted Cash Flow</h2>
@@ -232,6 +272,48 @@
     {% endfor %}
     </tbody>
   </table></div>
+  {% endif %}
+
+  {% if r.scenarios and r.scenarios.cases %}
+  <h2 class="fc-h">Scenarios: bear, base, bull</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    Three coherent states of the world. Unlike the sensitivity grid, which moves one
+    input at a time, each scenario moves growth, margin, terminal growth and the discount
+    rate <em>together</em> — the way they actually correlate. The size of the bear-to-bull
+    spread is set by this company's own historical volatility, not a fixed percentage.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr>
+      <th>Scenario</th><th>Yr-1 growth</th><th>Term. margin</th><th>Term. growth</th>
+      <th>WACC</th><th>Fair value</th><th>vs price</th><th>Weight</th>
+    </tr></thead>
+    <tbody>
+    {% for c in r.scenarios.cases %}
+      <tr{% if c.key == 'base' %} style="font-weight:620;background:var(--surface-2);"{% endif %}>
+        <td>{{ c.label }}</td>
+        <td>{{ pct(c.drivers[0].value) }}</td>
+        <td>{{ pct(c.drivers[1].value) }}</td>
+        <td>{{ pct(c.drivers[2].value) }}</td>
+        <td>{{ pct(c.drivers[3].value) }}</td>
+        <td>{{ fmt_price(c.fair_value_per_share) }}</td>
+        <td class="{% if c.upside and c.upside > 0 %}v positive{% elif c.upside and c.upside < 0 %}v negative{% endif %}">
+          {% if c.upside is not none %}{{ '%+.0f'|format(c.upside * 100) }}%{% else %}-{% endif %}
+        </td>
+        <td>{{ '%.0f'|format(c.probability * 100) }}%</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p style="font-size:12.5px;color:var(--ink-2);margin-top:10px;">
+    <strong>Probability-weighted value {{ fmt_price(r.scenarios.expected_value) }}</strong>{% if r.scenarios.expected_upside is not none %}
+    ({{ '%+.1f'|format(r.scenarios.expected_upside * 100) }}% vs price){% endif %}.
+    Range {{ fmt_price(r.scenarios.value_range[0]) }} to {{ fmt_price(r.scenarios.value_range[1]) }}{% if r.scenarios.dispersion is not none %},
+    a spread of {{ '%.0f'|format(r.scenarios.dispersion * 100) }}% of the base fair value{% endif %}.
+    Read as a range, not a point.
+  </p>
+  {% for c in r.scenarios.cases %}
+  <div class="fc-evidence"><strong>{{ c.label }}.</strong> {{ c.narrative }}</div>
+  {% endfor %}
   {% endif %}
 
   {% if r.assumptions %}

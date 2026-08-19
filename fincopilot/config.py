@@ -260,12 +260,42 @@ DEFAULT_TAX_RATE = {
 DCF_FORECAST_YEARS = 10
 
 # Geometric decay factor for the revenue growth path: each year closes this
-# share of the remaining gap to the terminal rate. 0.55 takes a 65% start to
-# roughly 4x cumulative growth over ten years; a linear fade over the same
-# horizon reaches 17x, which is not a forecast anyone would defend.
-DCF_GROWTH_DECAY = 0.55
+# share of the remaining gap to the terminal rate.
+#
+# Originally 0.55, which took a 65% starter to only ~4x cumulative growth over
+# ten years — the fade was so fast that genuine multi-year compounders (the
+# AI-cycle semiconductor names above all) were systematically undervalued: NVDA
+# collapsed to single-digit growth by year five while every analyst on the
+# street modelled far more. 0.70 lets growth persist longer — ~7x cumulative
+# over ten years, with an 18% rate still in year five — while staying far below
+# the 16x a linear fade compounds to, which is the absurdity this decay exists
+# to prevent. It is the single largest lever on a growth name's fair value, so
+# it is set conservatively but not punitively.
+DCF_GROWTH_DECAY = 0.70
 TERMINAL_GROWTH_BOUNDS = (0.01, 0.04)   # must stay below long-run GDP growth
 WACC_BOUNDS = (0.05, 0.20)              # sanity rails on the discount rate
+
+# Terminal operating margin is an economic judgement about the mature state of
+# the business, not a mechanical clamp to the recent range. A decade out,
+# competition, product mix and the limits of scale can pull even a dominant
+# company's peak margin down — so the model is allowed to normalise the margin
+# BELOW the recent range when it can justify it. Two rails only: a floor (a
+# fraction of today's margin) stops an unjustified collapse, and a ceiling (the
+# company's own demonstrated peak) stops a margin no evidence supports.
+TERMINAL_MARGIN_FLOOR_FRACTION = 0.60   # floor = 60% of the current operating margin
+TERMINAL_MARGIN_ABSOLUTE_FLOOR = 0.05
+
+# Blume beta adjustment: beta_used = w * beta_raw + (1 - w) * 1.0.
+#
+# A raw historical beta is a noisy, backward-looking estimate that reliably
+# overstates how extreme a stock's forward beta will be — betas regress toward
+# the market over time. Marshall Blume's adjustment, the Bloomberg/practitioner
+# default, corrects for that mean reversion. It matters most exactly where it
+# should: NVIDIA's raw 5-year beta of ~2.2 implied a 16.8% discount rate that no
+# analyst uses, and adjusting it to ~1.8 removes roughly 220bps of cost of
+# equity. Applied to every name, so low-beta stocks are nudged up toward 1.0 and
+# high-beta stocks pulled down — the standard, symmetric treatment.
+BETA_BLUME_WEIGHT = 0.67
 
 # Sensitivity grid: WACC on one axis, terminal growth on the other.
 SENSITIVITY_WACC_STEPS = 5
@@ -284,6 +314,102 @@ RATING_THRESHOLDS = {
     "HOLD": -0.10,      # between -10% and +15%
     # below -10% -> SELL
 }
+
+
+# ---------------------------------------------------------------------------
+# Scenario analysis (bear / base / bull)
+# ---------------------------------------------------------------------------
+# The sensitivity grid above flexes two inputs one at a time. A scenario is a
+# different, complementary idea: a coherent *state of the world* in which the
+# value drivers move together — a downside where growth disappoints AND margins
+# compress AND the market demands a higher risk premium, all at once. That
+# correlation is what makes a bear/bull range meaningful rather than a
+# mechanical grid corner.
+#
+# The magnitude of the moves is not a fixed +/-X%. Where the history allows it,
+# the growth and margin spreads are sized from the company's *own* historical
+# dispersion (see valuation/scenarios.py): a business whose growth has swung
+# wildly gets a wide range; a steady compounder gets a narrow one. These bounds
+# only floor and cap that data-derived spread so a single anomalous year cannot
+# produce an absurd band, and provide a fallback when history is too short to
+# measure dispersion at all.
+
+# Prior probabilities placed on each scenario, used only to compute a
+# probability-weighted expected value. Deliberately conservative and symmetric:
+# the base case carries the weight, and the tails are treated as equally likely
+# so the expected value does not smuggle in a directional view. They must sum
+# to 1.0.
+SCENARIO_PROBABILITIES = {"bear": 0.25, "base": 0.50, "bull": 0.25}
+
+# Discount-rate move between scenarios. In a downside the market demands a
+# higher risk premium; in an upside it accepts a lower one. +/-150bps is a
+# little wider than one sensitivity step (100bps) because a scenario moves the
+# whole risk picture, not just the rate in isolation. Clamped to WACC_BOUNDS.
+SCENARIO_WACC_DELTA = 0.015
+
+# Perpetual-growth move between scenarios, in the same spirit. Kept small
+# because the terminal rate is already tightly bounded near long-run GDP; a
+# scenario should not imply the economy itself grows a full point faster
+# forever. Clamped to TERMINAL_GROWTH_BOUNDS.
+SCENARIO_TERMINAL_GROWTH_DELTA = 0.005
+
+# Floors and caps on the data-derived spreads. The growth spread is one
+# standard deviation of the company's historical revenue growth, bounded here;
+# the margin spread is one standard deviation of its historical operating
+# margin, bounded here. Floors guarantee the three cases always differ
+# materially; caps stop a single volatile year from opening an indefensible gap.
+SCENARIO_MIN_GROWTH_SPREAD = 0.05      # at least +/-5pp on year-one growth
+SCENARIO_MAX_GROWTH_SPREAD = 0.20      # at most +/-20pp
+SCENARIO_MIN_MARGIN_SPREAD = 0.02      # at least +/-2pp on the terminal margin
+SCENARIO_MAX_MARGIN_SPREAD = 0.12      # at most +/-12pp
+
+
+# ---------------------------------------------------------------------------
+# Valuation triangulation (blend)
+# ---------------------------------------------------------------------------
+# A DCF is one opinion, and an intrinsic one: it says what the business is worth
+# on its own cash flows, which on a highly-rated name frequently sits well below
+# what the whole market of analysts will pay. Rather than assert the market is
+# wrong, the blend triangulates — it places our DCF alongside the Wall Street
+# consensus price target and reconciles them into one figure, weighting each
+# source by how much confidence it deserves.
+#
+# The point is not to reverse-engineer the share price. It is to stop a single
+# conservative (or single optimistic) method being reported as the answer when
+# several independent methods disagree. Every source, its value and its weight
+# are shown, so the blend is auditable rather than a black box.
+
+# Base weight for each source *type*. The model (our DCF) is one independent
+# voice; the analyst-consensus weight is scaled separately by how many analysts
+# stand behind it (below), because a target followed by sixty analysts deserves
+# more confidence than one followed by three. Comps and web sources are wired
+# for later use and weighted lower, reflecting their looser link to value.
+BLEND_SOURCE_WEIGHTS = {
+    "model": 1.0,       # our DCF
+    "analyst": 1.0,     # per-unit weight, then scaled by analyst count
+    "comps": 0.7,
+    "web": 0.4,
+}
+
+# Analyst-consensus confidence scales with coverage: full unit weight is reached
+# at this many analysts, and the multiplier is capped so a single mega-cap with
+# a hundred analysts cannot drown out every other method entirely. A "balanced
+# triangulation": the consensus can pull the blend well above our DCF, but the
+# DCF still counts.
+BLEND_ANALYST_REFERENCE_COUNT = 12      # analysts for one full weight unit
+BLEND_ANALYST_MAX_WEIGHT_MULTIPLE = 3.0  # cap on the consensus weight multiple
+
+# Robust outlier rejection. With three or more estimates, any value outside this
+# band around the (unweighted) median is dropped from the blend and reported as
+# excluded, so one stale target or bad extraction cannot swing the result. With
+# only two estimates there is nothing to reject against, so both are kept.
+BLEND_OUTLIER_LOW_MULTIPLE = 0.40       # drop below 0.40x the median estimate
+BLEND_OUTLIER_HIGH_MULTIPLE = 2.50      # drop above 2.50x the median estimate
+
+# When our intrinsic DCF and the analyst consensus disagree by more than this,
+# the report says so explicitly: a wide gap is a signal to read the blend as a
+# reconciliation of two genuinely different views, not a precise number.
+BLEND_DIVERGENCE_FLAG = 0.35            # +/-35% between DCF and consensus
 
 
 # ---------------------------------------------------------------------------

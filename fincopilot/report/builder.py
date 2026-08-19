@@ -115,6 +115,25 @@ def _kpis(history: FinancialHistory, valuation: Valuation) -> list[KPI]:
             )
         )
 
+    # Lead with the blended (triangulated) value when there is one, and keep the
+    # intrinsic DCF as its own tile beside it so the reader sees both.
+    blended = valuation.blended
+    has_blend = bool(blended and blended.blended_value and len(blended.included) > 1)
+
+    if has_blend:
+        tiles.append(
+            KPI(
+                label="Blended fair value",
+                value=f"{currency} {blended.blended_value:,.2f}",
+                caption=(
+                    f"{blended.upside * 100:+.0f}% vs market"
+                    if blended.upside is not None
+                    else "triangulated"
+                ),
+                tone="positive" if (blended.upside or 0) > 0 else "negative",
+            )
+        )
+
     if valuation.fair_value is not None:
         tiles.append(
             KPI(
@@ -149,10 +168,12 @@ def build_report(
         exchange=company.exchange,
         sector=company.sector,
         currency=history.currency,
-        rating=valuation.rating,
+        # Headline verdict is the blended figure when available, DCF otherwise.
+        rating=valuation.headline_rating,
         share_price=valuation.share_price,
-        fair_value=valuation.fair_value,
-        upside=valuation.upside,
+        fair_value=valuation.headline_value,
+        dcf_fair_value=valuation.fair_value,
+        upside=valuation.headline_upside,
         market_implied_growth=valuation.market_implied_growth,
         warnings=list(valuation.warnings),
     )
@@ -162,6 +183,10 @@ def build_report(
     report.forecast_table = _forecast_table(valuation)
     report.assumptions = valuation.assumptions.to_dict()
 
+    if valuation.blended and valuation.blended.blended_value:
+        report.blended = valuation.blended.to_dict()
+    if valuation.scenarios and valuation.scenarios.cases:
+        report.scenarios = valuation.scenarios.to_dict()
     if valuation.sensitivity:
         report.sensitivity = valuation.sensitivity.to_dict()
     if valuation.comps:
