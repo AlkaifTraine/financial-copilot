@@ -111,7 +111,7 @@ def _run_case(
     # Keep the perpetuity convergent even at the low-WACC / high-growth corner.
     terminal_growth = min(terminal_growth, wacc - _MIN_WACC_GROWTH_GAP)
 
-    growth_path = decay_path(year_one_growth, terminal_growth, horizon, config.DCF_GROWTH_DECAY)
+    growth_path = decay_path(year_one_growth, terminal_growth, horizon, inputs.growth_decay)
     margin_path = fade(current_margin, terminal_margin, horizon)
 
     try:

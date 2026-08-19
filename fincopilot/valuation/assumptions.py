@@ -62,6 +62,7 @@ class ForecastInputs:
     capex_pct: float = 0.04
     working_capital_pct: float = _DEFAULT_WORKING_CAPITAL_PCT
     terminal_growth: float = 0.025
+    growth_decay: float = 0.70
 
 
 def _ratio_to_revenue(history: FinancialHistory, attribute: str, last_n: int = 3) -> float | None:
@@ -77,6 +78,26 @@ def _ratio_to_revenue(history: FinancialHistory, attribute: str, last_n: int = 3
 def _clamp(value: float, bounds: tuple[float, float]) -> tuple[float, bool]:
     clamped = min(max(value, bounds[0]), bounds[1])
     return clamped, clamped != value
+
+
+def _growth_decay(year_one_growth: float) -> float:
+    """Geometric decay for the growth path, gentler for lower, sustainable growth.
+
+    A single decay is wrong across the growth spectrum. Extreme growth cannot
+    persist and must fade fast (a 60% starter faded slowly forecasts a company
+    into a tenth of GDP); but a durable mid-teens compounder faded at that same
+    rate reaches a mature CAGR within a few years, which no such business does —
+    and that is precisely what made the engine too bearish on quality growers.
+    So the decay scales with the starting rate: the faster the start, the faster
+    it must fall.
+    """
+    if year_one_growth >= 0.45:
+        return 0.68
+    if year_one_growth >= 0.30:
+        return 0.74
+    if year_one_growth >= 0.18:
+        return 0.80
+    return 0.86
 
 
 def _margin_floor_fraction(margins: list[float]) -> tuple[float, str]:
@@ -405,9 +426,13 @@ def derive_inputs(
     )
 
     # -- paths ------------------------------------------------------------
-    growth_path = decay_path(
-        year_one_growth, terminal_growth, horizon, config.DCF_GROWTH_DECAY
-    )
+    # The decay is adaptive: extreme growth cannot persist and fades fast, while a
+    # durable mid-teens compounder should keep growing for years. A single decay
+    # applied to both is what made the model systematically too bearish on quality
+    # growers — a 15% grower faded at a hyper-growth rate reaches a mature CAGR
+    # within a few years, which no such business does.
+    growth_decay = _growth_decay(year_one_growth)
+    growth_path = decay_path(year_one_growth, terminal_growth, horizon, growth_decay)
     current_margin = latest.operating_margin or mean_margin
     margin_path = fade(current_margin, terminal_margin, horizon)
 
@@ -422,11 +447,11 @@ def derive_inputs(
             rationale=(
                 f"Revenue growth decays geometrically from {year_one_growth * 100:.0f}% "
                 f"toward {terminal_growth * 100:.1f}%, closing "
-                f"{config.DCF_GROWTH_DECAY * 100:.0f}% of the remaining gap each year, "
-                f"while margin trends linearly from {current_margin * 100:.1f}% to "
-                f"{terminal_margin * 100:.1f}%. Growth is not held flat, and it is not "
-                f"faded in a straight line either: a linear fade over ten years "
-                f"compounds far higher than any business sustains."
+                f"{growth_decay * 100:.0f}% of the remaining gap each year (the fade is "
+                f"slower for lower, more sustainable starting growth), while margin trends "
+                f"linearly from {current_margin * 100:.1f}% to {terminal_margin * 100:.1f}%. "
+                f"Growth is not held flat, and it is not faded in a straight line either: a "
+                f"linear fade over ten years compounds far higher than any business sustains."
             ),
         )
     )
@@ -528,4 +553,5 @@ def derive_inputs(
         capex_pct=capex_pct,
         working_capital_pct=working_capital_pct,
         terminal_growth=terminal_growth,
+        growth_decay=growth_decay,
     )

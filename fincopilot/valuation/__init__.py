@@ -171,6 +171,20 @@ def value_company(
         valuation.warnings.append(f"The discounted cash flow model could not be built: {exc}")
         return valuation
 
+    # A non-positive equity value is a degenerate DCF, not a −100%+ SELL: at these
+    # margins and growth the modelled cash flows do not cover the cost of capital
+    # and net debt. Say so plainly and derive no rating from it (the upside
+    # property already returns None), rather than print a nonsensical percentage.
+    if valuation.dcf.fair_value_per_share <= 0:
+        valuation.warnings.append(
+            f"The discounted cash flow produces a non-positive equity value "
+            f"({history.currency} {valuation.dcf.fair_value_per_share:,.2f} per share) under "
+            f"these assumptions: the modelled operating margins and growth do not cover the "
+            f"cost of capital and net debt over the forecast. The DCF is not meaningful for "
+            f"this company in its current state, so no intrinsic rating is derived from it; "
+            f"read the comparables and the scenario range instead."
+        )
+
     # -- sensitivity ------------------------------------------------------
     valuation.sensitivity = build_grid(
         base_revenue=inputs.base_revenue,
@@ -221,6 +235,7 @@ def value_company(
             net_debt=net_debt,
             shares_outstanding=shares,
             target_price=history.share_price,
+            growth_decay=inputs.growth_decay,
         )
 
         # The full comparison: every driver's market-implied level beside our

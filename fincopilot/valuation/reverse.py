@@ -52,6 +52,7 @@ def implied_growth(
     net_debt: float,
     shares_outstanding: float,
     target_price: float,
+    growth_decay: float = config.DCF_GROWTH_DECAY,
 ) -> float | None:
     """Year-one revenue growth implied by ``target_price``.
 
@@ -67,7 +68,7 @@ def implied_growth(
             base_revenue=base_revenue,
             base_year=base_year,
             growth_path=decay_path(
-                year_one_growth, terminal_growth, horizon, config.DCF_GROWTH_DECAY
+                year_one_growth, terminal_growth, horizon, growth_decay
             ),
             margin_path=fade(current_margin, terminal_margin, horizon),
             tax_rate=tax_rate,
@@ -225,7 +226,7 @@ def build_priced_in(
     base_cagr = _cagr(inputs.growth_path)
     if implied_year_one_growth is not None:
         implied_path = decay_path(
-            implied_year_one_growth, inputs.terminal_growth, horizon, config.DCF_GROWTH_DECAY
+            implied_year_one_growth, inputs.terminal_growth, horizon, inputs.growth_decay
         )
         rows.append(PricedInRow(
             key="revenue_cagr",
@@ -332,7 +333,7 @@ def build_priced_in(
     # diverges, so the search stops a quarter-point short.
     def terminal_growth_value(terminal_growth: float) -> float:
         return run_dcf(
-            growth_path=decay_path(year_one_growth, terminal_growth, horizon, config.DCF_GROWTH_DECAY),
+            growth_path=decay_path(year_one_growth, terminal_growth, horizon, inputs.growth_decay),
             margin_path=inputs.margin_path,
             terminal_growth=terminal_growth,
             capex_pct=inputs.capex_pct,

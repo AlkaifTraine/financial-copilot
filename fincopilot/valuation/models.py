@@ -539,8 +539,14 @@ class Valuation:
 
     @property
     def upside(self) -> float | None:
-        """Fractional upside from the current price to the DCF fair value."""
-        if not self.share_price or not self.fair_value:
+        """Fractional upside from the current price to the DCF fair value.
+
+        A non-positive fair value is not a -100%-plus SELL; it means the model is
+        degenerate here (margins and growth do not cover the cost of capital and
+        net debt), so there is no meaningful upside to quote and no rating to
+        derive. Surfaced as a warning instead, in ``value_company``.
+        """
+        if not self.share_price or not self.fair_value or self.fair_value <= 0:
             return None
         return self.fair_value / self.share_price - 1
 
@@ -558,7 +564,7 @@ class Valuation:
 
     @property
     def headline_upside(self) -> float | None:
-        if not self.share_price or not self.headline_value:
+        if not self.share_price or not self.headline_value or self.headline_value <= 0:
             return None
         return self.headline_value / self.share_price - 1
 
