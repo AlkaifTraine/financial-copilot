@@ -96,6 +96,10 @@ def load_company(query: str, *, refresh: bool = False) -> None:
             status.write("Resolving company identity...")
             company = resolve_company(query)
             st.session_state["company"] = company
+            # Remember the company in the URL so a server restart or a page
+            # reload lands back here (auto-restored below) instead of on the home
+            # page — session state is in-memory and does not survive a redeploy.
+            st.query_params["company"] = company.ticker
             status.write(
                 f"**{company.name}** ({company.ticker} · {company.exchange})"
                 + (f" · SEC CIK {company.cik}" if company.cik else " · not an SEC filer")
@@ -215,6 +219,22 @@ with st.sidebar:
         "Not investment advice. Figures come from public filings and market data "
         "and may contain errors."
     )
+
+
+# ---------------------------------------------------------------------------
+# Restore from the URL after a restart / reload
+# ---------------------------------------------------------------------------
+# A redeploy (or the host sleeping the app) restarts the server and wipes the
+# in-memory session, which otherwise drops the user on the home page mid-task —
+# the exact "clicking Generate sends me home" symptom. If the URL still names a
+# company and nothing is loaded, reload it from cache (fast) and carry on. Guarded
+# by a one-shot flag so a company that genuinely fails to load does not loop.
+
+_url_company = st.query_params.get("company")
+if _url_company and not st.session_state["index"] and not st.session_state.get("_restore_tried"):
+    st.session_state["_restore_tried"] = True
+    load_company(_url_company)
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -684,6 +704,13 @@ with report_tab:
                 status.update(label="Report ready", state="complete", expanded=False)
         except RateLimitExceeded as limit:
             st.warning(str(limit))
+        except Exception as exc:  # never let a report failure blank the page
+            logging.exception("report generation failed")
+            st.error(
+                f"The report could not be generated ({type(exc).__name__}: {exc}). "
+                f"The valuation and analysis above are unaffected — try again, and if it "
+                f"persists the model service may be briefly unavailable."
+            )
 
     report = st.session_state["report"]
     if report:
