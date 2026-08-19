@@ -317,6 +317,51 @@
   </table></div>
   {% endif %}
 
+  {# ---- competitive moat + management vs us ---- #}
+  {% if r.competitive %}
+  {% set cp = r.competitive %}
+  <h2 class="fc-h">Competitive Moat</h2>
+  <div class="fc-quality">
+    <span class="fc-chip {% if 'Wide' in cp.moat_rating %}positive{% elif cp.moat_rating == 'None' %}negative{% endif %}"><b>Moat</b> · {{ cp.moat_rating }}</span>
+  </div>
+  {% if cp.moat_summary %}<p class="fc-quality-note">{{ cp.moat_summary }}</p>{% endif %}
+  {% if cp.moat_sources or cp.competitive_threats %}
+  <div class="fc-view">
+    {% if cp.moat_sources %}
+    <div class="col bull"><h4>Sources of advantage</h4>
+      <ul>{% for s in cp.moat_sources %}<li>{{ s }}</li>{% endfor %}</ul></div>
+    {% endif %}
+    {% if cp.competitive_threats %}
+    <div class="col bear"><h4>Threats to the moat</h4>
+      <ul>{% for s in cp.competitive_threats %}<li>{{ s }}</li>{% endfor %}</ul></div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% if cp.management_vs_us %}
+  <h2 class="fc-h">Management Says vs Our View</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    Where our modelled view meets management's own. The rows that matter are the ones where we
+    are more cautious than the company — that gap is where the thesis lives.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr style="text-align:left;">
+      <th>Topic</th><th style="text-align:left;">Management says</th>
+      <th style="text-align:left;">Our view</th><th style="text-align:left;">Our take</th>
+    </tr></thead>
+    <tbody>
+    {% for m in cp.management_vs_us %}
+      <tr>
+        <td><strong>{{ m.topic }}</strong></td>
+        <td style="text-align:left;">{{ m.management_says }}</td>
+        <td style="text-align:left;">{{ m.our_view }}</td>
+        <td style="text-align:left;white-space:nowrap;">{{ m.assessment }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% endif %}
+
   {# ---- what would change our view (thesis-breakers) ---- #}
   {% if r.thesis and (r.thesis.bull_triggers or r.thesis.bear_triggers or r.thesis.red_team) %}
   <h2 class="fc-h">What Would Change Our View</h2>
@@ -338,6 +383,57 @@
   {% endif %}
   {% if r.thesis.red_team %}
   <div class="fc-redteam"><b>The bear (or bull) case against us.</b> {{ r.thesis.red_team }}</div>
+  {% endif %}
+  {% endif %}
+
+  {# ---- upcoming catalysts + monitoring dashboard ---- #}
+  {% if r.forward and (r.forward.catalysts or r.forward.watch_items) %}
+  {% if r.forward.catalysts %}
+  <h2 class="fc-h">Upcoming Catalysts</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    The dated events most likely to move the stock, the direction each points, and the figure it
+    would move. These are when the thesis gets tested.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr style="text-align:left;">
+      <th>Event</th><th style="text-align:left;">Timing</th>
+      <th style="text-align:left;">Likely direction</th><th style="text-align:left;">Moves</th>
+    </tr></thead>
+    <tbody>
+    {% for c in r.forward.catalysts %}
+      <tr>
+        <td><strong>{{ c.event }}</strong></td>
+        <td style="text-align:left;white-space:nowrap;">{{ c.timing }}</td>
+        <td style="text-align:left;white-space:nowrap;">{{ c.direction }}</td>
+        <td style="text-align:left;">{{ c.metric }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% if r.forward.watch_items %}
+  <h2 class="fc-h">What to Watch</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    The metrics the valuation is most exposed to, with what our thesis expects each to do — so a
+    reader can tell when reality diverges from our view.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr style="text-align:left;">
+      <th>Metric</th><th style="text-align:left;">Current</th><th style="text-align:left;">Trend</th>
+      <th style="text-align:left;">What we expect</th><th style="text-align:left;">Why it matters</th>
+    </tr></thead>
+    <tbody>
+    {% for w in r.forward.watch_items %}
+      <tr>
+        <td><strong>{{ w.metric }}</strong></td>
+        <td style="text-align:left;">{{ w.current }}</td>
+        <td style="text-align:left;white-space:nowrap;">{{ w.trend }}</td>
+        <td style="text-align:left;">{{ w.expected }}</td>
+        <td style="text-align:left;">{{ w.why }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
   {% endif %}
   {% endif %}
 

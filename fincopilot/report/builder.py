@@ -273,6 +273,40 @@ def build_report(
         if segment_analysis and segment_analysis.segments:
             report.segment_forecast = segment_analysis.to_dict()
 
+        # Competitive moat + management-vs-us (#11/#13/#14).
+        if progress:
+            progress("competitive", "assessing the moat")
+        from .competitive import generate_competitive
+
+        competitive_context = retrieve(
+            "competitive advantage moat switching costs ecosystem CUDA differentiation "
+            "management guidance outlook pricing power competition market share",
+            index,
+            top_k=8,
+        ).context_block
+        competitive = generate_competitive(
+            company, history, valuation, qualitative_context=competitive_context
+        )
+        if competitive.moat_summary or competitive.management_vs_us:
+            report.competitive = competitive.to_dict()
+
+        # Forward view: upcoming catalysts + monitoring dashboard (#19/#20).
+        if progress:
+            progress("forward", "mapping catalysts and what to watch")
+        from .monitoring import generate_forward
+
+        forward_context = retrieve(
+            "upcoming catalysts product launch roadmap guidance next quarter capacity "
+            "regulatory decision events to watch expectations timeline",
+            index,
+            top_k=8,
+        ).context_block
+        forward = generate_forward(
+            company, history, valuation, qualitative_context=forward_context
+        )
+        if forward.catalysts or forward.watch_items:
+            report.forward = forward.to_dict()
+
     if include_narrative and index is not None:
         report.sections = section_builder.build_all(
             index,

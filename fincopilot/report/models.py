@@ -102,6 +102,12 @@ class ReportModel:
     # risk section. Rendered as a table.
     risks: list[dict] = field(default_factory=list)
 
+    # Competitive moat + management-vs-us comparison (#11/#13/#14).
+    competitive: dict | None = None
+
+    # Forward view: upcoming catalysts + monitoring dashboard (#19/#20).
+    forward: dict | None = None
+
     kpis: list[KPI] = field(default_factory=list)
     sections: list[Section] = field(default_factory=list)
 

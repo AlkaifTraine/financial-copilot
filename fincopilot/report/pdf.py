@@ -448,6 +448,124 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         ]))
         story.append(table)
 
+    # -- competitive moat + management vs us ------------------------------
+    cp = report.competitive
+    if cp:
+        story.append(Paragraph("COMPETITIVE MOAT", styles["h2"]))
+        story.append(Paragraph(
+            f"<b>Moat rating:</b> {cp.get('moat_rating', 'Undetermined')}", styles["small"]
+        ))
+        if cp.get("moat_summary"):
+            story.append(Paragraph(cp["moat_summary"], styles["body"]))
+        if cp.get("moat_sources"):
+            story.append(Paragraph("<b>Sources of advantage:</b>", styles["small"]))
+            story.append(ListFlowable(
+                [ListItem(Paragraph(s, styles["bullet"]), leftIndent=10) for s in cp["moat_sources"]],
+                bulletType="bullet", start="–", leftIndent=12, bulletFontSize=7,
+            ))
+        if cp.get("competitive_threats"):
+            story.append(Paragraph("<b>Threats to the moat:</b>", styles["small"]))
+            story.append(ListFlowable(
+                [ListItem(Paragraph(s, styles["bullet"]), leftIndent=10) for s in cp["competitive_threats"]],
+                bulletType="bullet", start="–", leftIndent=12, bulletFontSize=7,
+            ))
+        if cp.get("management_vs_us"):
+            story.append(Paragraph("MANAGEMENT SAYS VS OUR VIEW", styles["h2"]))
+            story.append(Paragraph(
+                "Where our modelled view meets management's own. The rows that matter are the "
+                "ones where we are more cautious than the company.",
+                styles["small"],
+            ))
+            story.append(Spacer(1, 4))
+            header = ["Topic", "Management says", "Our view", "Our take"]
+            rows = [[Paragraph(h, styles["cellb"]) for h in header]]
+            for claim in cp["management_vs_us"]:
+                rows.append([
+                    Paragraph(f"<b>{claim.get('topic', '')}</b>", styles["cell"]),
+                    Paragraph(claim.get("management_says", ""), styles["cell"]),
+                    Paragraph(claim.get("our_view", ""), styles["cell"]),
+                    Paragraph(claim.get("assessment", ""), styles["cell"]),
+                ])
+            widths = [CONTENT_WIDTH * w for w in (0.18, 0.30, 0.30, 0.22)]
+            table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(table)
+
+    # -- upcoming catalysts + monitoring dashboard ------------------------
+    fw = report.forward
+    if fw and (fw.get("catalysts") or fw.get("watch_items")):
+        if fw.get("catalysts"):
+            story.append(Paragraph("UPCOMING CATALYSTS", styles["h2"]))
+            story.append(Paragraph(
+                "The dated events most likely to move the stock, the direction each points, and "
+                "the figure it would move. These are when the thesis gets tested.",
+                styles["small"],
+            ))
+            story.append(Spacer(1, 4))
+            header = ["Event", "Timing", "Direction", "Moves"]
+            rows = [[Paragraph(h, styles["cellb"]) for h in header]]
+            for cat in fw["catalysts"]:
+                rows.append([
+                    Paragraph(f"<b>{cat.get('event', '')}</b>", styles["cell"]),
+                    Paragraph(cat.get("timing", ""), styles["cell"]),
+                    Paragraph(cat.get("direction", ""), styles["cell"]),
+                    Paragraph(cat.get("metric", ""), styles["cell"]),
+                ])
+            widths = [CONTENT_WIDTH * w for w in (0.30, 0.22, 0.16, 0.32)]
+            table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(table)
+
+        if fw.get("watch_items"):
+            story.append(Paragraph("WHAT TO WATCH", styles["h2"]))
+            story.append(Paragraph(
+                "The metrics the valuation is most exposed to, with what our thesis expects each "
+                "to do — so a reader can tell when reality diverges from our view.",
+                styles["small"],
+            ))
+            story.append(Spacer(1, 4))
+            header = ["Metric", "Current", "Trend", "What we expect", "Why it matters"]
+            rows = [[Paragraph(h, styles["cellb"]) for h in header]]
+            for item in fw["watch_items"]:
+                rows.append([
+                    Paragraph(f"<b>{item.get('metric', '')}</b>", styles["cell"]),
+                    Paragraph(item.get("current", ""), styles["cell"]),
+                    Paragraph(item.get("trend", ""), styles["cell"]),
+                    Paragraph(item.get("expected", ""), styles["cell"]),
+                    Paragraph(item.get("why", ""), styles["cell"]),
+                ])
+            widths = [CONTENT_WIDTH * w for w in (0.18, 0.17, 0.12, 0.26, 0.27)]
+            table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(table)
+
     # -- valuation triangulation ------------------------------------------
     if report.blended and len(report.blended.get("estimates", [])) > 1:
         bl = report.blended
