@@ -183,6 +183,44 @@ def _beta(history: FinancialHistory, ledger: AssumptionLedger) -> float:
     return bounded
 
 
+def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
+    """Build-up size premium added to the cost of equity, by market cap."""
+    market_cap = history.market_cap or 0.0
+    premium = 0.0
+    label = "mid-cap"
+    for threshold, value in config.SIZE_PREMIUM_TIERS:
+        if market_cap >= threshold:
+            premium = value
+            label = {0.0: "small-cap", 2e9: "mid-cap", 10e9: "large-cap", 200e9: "mega-cap"}.get(
+                threshold, "mid-cap"
+            )
+            break
+
+    if market_cap <= 0:
+        return 0.0
+
+    ledger.add(
+        Assumption(
+            key="size_premium",
+            label="Size premium",
+            value=premium,
+            unit="%",
+            source=SOURCE_DEFAULT,
+            derivation=(
+                f"Build-up size premium for a {label} "
+                f"(market cap {history.currency} {market_cap / 1e9:,.0f}bn)"
+            ),
+            rationale=(
+                "The documented size effect: smaller companies require a higher "
+                "return for illiquidity and fragility, the largest a small discount "
+                "for depth and quality. Standard in the build-up cost of equity, and "
+                "symmetric across the size spectrum."
+            ),
+        )
+    )
+    return premium
+
+
 def _tax_rate(history: FinancialHistory, company: Company, ledger: AssumptionLedger) -> float:
     """Effective tax rate, preferred over the statutory rate."""
     rates = [
@@ -240,7 +278,35 @@ def compute_wacc(
     beta = _beta(history, ledger)
     tax_rate = _tax_rate(history, company, ledger)
 
-    cost_of_equity = risk_free + beta * premium
+    # Horizon beta: the value of a 10-year DCF is dominated by mature-phase cash
+    # flows, whose beta is far closer to the market than today's spot estimate.
+    # Discounting them at a high-growth spot beta over-penalises the terminal
+    # value, so the discount rate uses the horizon-average beta.
+    horizon_weight = config.BETA_HORIZON_WEIGHT
+    beta_dcf = horizon_weight * beta + (1 - horizon_weight) * 1.0
+    ledger.add(
+        Assumption(
+            key="beta_dcf",
+            label="Beta (long-horizon)",
+            value=beta_dcf,
+            unit="x",
+            source=SOURCE_HISTORICAL,
+            derivation=(
+                f"{horizon_weight:.2f} x {beta:.2f} (Blume) + {1 - horizon_weight:.2f} x 1.00, "
+                f"the average beta over a {config.DCF_FORECAST_YEARS}-year horizon"
+            ),
+            rationale=(
+                "A long-dated DCF is dominated by mature-phase cash flows, whose "
+                "beta reverts toward the market; the discount rate uses that "
+                "horizon-average beta rather than the spot high-growth beta."
+            ),
+        )
+    )
+
+    size_premium = _size_premium(history, ledger)
+
+    cost_of_equity = risk_free + beta_dcf * premium + size_premium
+    size_term = f" {size_premium * 100:+.1f}% size" if size_premium else ""
     ledger.add(
         Assumption(
             key="cost_of_equity",
@@ -249,7 +315,8 @@ def compute_wacc(
             unit="%",
             source=SOURCE_HISTORICAL,
             derivation=(
-                f"CAPM: {risk_free * 100:.2f}% + {beta:.2f} x {premium * 100:.2f}%"
+                f"CAPM build-up: {risk_free * 100:.2f}% + {beta_dcf:.2f} x "
+                f"{premium * 100:.2f}%{size_term}"
             ),
             rationale="The return equity investors require for this company's risk.",
         )

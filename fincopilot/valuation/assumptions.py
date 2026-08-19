@@ -79,6 +79,33 @@ def _clamp(value: float, bounds: tuple[float, float]) -> tuple[float, bool]:
     return clamped, clamped != value
 
 
+def _margin_floor_fraction(margins: list[float]) -> tuple[float, str]:
+    """How much of today's margin the forecast must retain, from its durability.
+
+    A blanket "the terminal margin may fall to 60% of today's" is wrong in both
+    directions. A business that has held a steady margin has demonstrated pricing
+    power the forecast should not assume away — its floor should sit near today's
+    level. One whose margin swings has shown it cannot defend the level, so a
+    deeper normalisation is justified. Measured over the recent regime (the same
+    three-year window the margin mean uses), via the coefficient of variation, so
+    the judgement comes from the company's own record rather than a fixed guess.
+    """
+    recent = margins[-3:]
+    if len(recent) >= 2:
+        import statistics
+
+        mean_recent = statistics.fmean(recent)
+        cv = statistics.pstdev(recent) / mean_recent if mean_recent > 0 else 1.0
+    else:
+        cv = 1.0
+
+    if cv <= 0.15:
+        return 0.80, "steady"
+    if cv <= 0.35:
+        return 0.68, "moderately steady"
+    return 0.55, "volatile"
+
+
 _REFINE_PROMPT = """You are setting the forward assumptions for a discounted cash flow valuation of {company}.
 
 Historical results (from its own filings):
@@ -253,23 +280,26 @@ def derive_inputs(
     )
 
     # -- year one growth --------------------------------------------------
-    # Bounded on both sides, which the first version of this was not.
+    # Bounded on both sides.
     #
     # Ceiling: the company's own most recent growth. Forecasting an
     # acceleration requires evidence a DCF cannot supply.
     #
-    # Floor: the terminal rate. Year-one growth below the perpetual rate
-    # asserts that a business currently growing strongly collapses to
-    # below-GDP growth within twelve months, which is a specific claim needing
-    # specific evidence. Leaving this end unbounded let a proposal of 10% —
-    # against 65% reported growth — pass through untouched and cut the
-    # resulting fair value by three quarters.
+    # Floor: HALF the recent pace, not the terminal rate. An earlier version
+    # floored year-one growth at the ~2.5% perpetual rate, which let the model
+    # propose 20% against 65% reported growth — asserting a business growing
+    # strongly nearly stops within twelve months, with no evidence, and cutting
+    # fair value by three quarters. A company decelerating from 65% to 33% next
+    # year is already a steep, believable slowdown; below that needs a specific
+    # demand-cliff argument the model is not being given. The anchor is the more
+    # conservative of last year's growth and the three-year mean, so one
+    # anomalous spike cannot lift the floor.
     growth_ceiling = min(max(recent_growth, 0.05), _MAX_YEAR_ONE_GROWTH)
-    growth_floor = (
-        min(terminal_growth, growth_ceiling)
-        if recent_growth > 0
-        else _MIN_YEAR_ONE_GROWTH
-    )
+    if recent_growth > 0:
+        growth_anchor = min(recent_growth, mean_growth) if mean_growth > 0 else recent_growth
+        growth_floor = min(max(terminal_growth, growth_anchor * 0.5), growth_ceiling)
+    else:
+        growth_floor = _MIN_YEAR_ONE_GROWTH
     growth_bounds = (growth_floor, growth_ceiling)
 
     proposed_growth, growth_rationale = _model_value(proposal, "year_one_revenue_growth")
@@ -317,9 +347,10 @@ def derive_inputs(
     # business has never posted is a claim a DCF cannot carry).
     current_margin_now = margins[-1] if margins else mean_margin
     peak_margin = max(margins) if margins else 0.40
+    floor_fraction, durability = _margin_floor_fraction(margins)
     margin_floor = max(
         config.TERMINAL_MARGIN_ABSOLUTE_FLOOR,
-        current_margin_now * config.TERMINAL_MARGIN_FLOOR_FRACTION,
+        current_margin_now * floor_fraction,
     )
     margin_bounds = (margin_floor, peak_margin)
     proposed_margin, margin_rationale = _model_value(proposal, "terminal_operating_margin")
@@ -340,7 +371,7 @@ def derive_inputs(
         margin_derivation = (
             f"Model estimate {proposed_margin * 100:.1f}%, {shape}; kept within a "
             f"maturity band of [{margin_bounds[0] * 100:.1f}%, {margin_bounds[1] * 100:.1f}%] "
-            f"(floor {config.TERMINAL_MARGIN_FLOOR_FRACTION * 100:.0f}% of current, "
+            f"(floor {floor_fraction * 100:.0f}% of current, set by {durability} margins; "
             f"ceiling the demonstrated peak)"
         )
         raw_margin = proposed_margin if margin_clamped else None

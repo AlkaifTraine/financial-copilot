@@ -297,6 +297,34 @@ TERMINAL_MARGIN_ABSOLUTE_FLOOR = 0.05
 # high-beta stocks pulled down — the standard, symmetric treatment.
 BETA_BLUME_WEIGHT = 0.67
 
+# Long-horizon (DCF) beta reversion, applied on top of Blume for the discount
+# rate only: beta_dcf = w * beta_blume + (1 - w) * 1.0.
+#
+# A 10-year DCF discounts a cash-flow stream whose value is 60-80% terminal —
+# money that accrues in the company's mature phase, a decade out, where its beta
+# will be far closer to the market than a 5-year trailing estimate. Discounting
+# those distant, mature cash flows at a spot high-growth beta systematically
+# over-penalises them. The horizon reversion produces the *average* beta over the
+# life of the forecast rather than today's spot beta. Combined with Blume this
+# places roughly equal weight on the measured beta and the market (0.67 * 0.75 ≈
+# 0.5) — NVIDIA's raw 2.2 becomes a ~1.6 horizon beta, ~11.5-12% WACC, in the
+# range practitioners actually use for the name rather than 14.5%.
+BETA_HORIZON_WEIGHT = 0.75
+
+# Build-up size premium added to the cost of equity, by market capitalisation.
+# The Duff & Phelps / Ibbotson size effect: smaller companies carry a higher
+# required return (illiquidity, fragility, less coverage), the largest a small
+# discount (deep liquidity, quality, lower distress risk). Standard in the
+# build-up method — Ke = Rf + beta*ERP + size premium — and symmetric, so it is
+# not a mega-cap thumb on the scale: a micro-cap is penalised exactly as a
+# mega-cap is credited. Bounds are (min_market_cap_inclusive, premium).
+SIZE_PREMIUM_TIERS = (
+    (200e9, -0.015),    # >= $200bn  : mega-cap, -1.5%
+    (10e9, -0.005),     # $10-200bn  : large-cap, -0.5%
+    (2e9, 0.010),       # $2-10bn    : mid-cap, +1.0%
+    (0.0, 0.025),       # < $2bn     : small-cap, +2.5%
+)
+
 # Sensitivity grid: WACC on one axis, terminal growth on the other.
 SENSITIVITY_WACC_STEPS = 5
 # +/-100bps per step, spanning +/-200bps overall. A narrower band understated
