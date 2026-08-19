@@ -25,6 +25,26 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
 
 ## Done (shipped, verified)
 
+- **Valuation-accuracy calibration (2 phases).** Diagnosis: NVDA and AAPL both
+  priced ~80% below market from THREE compounding conservative levers, not one
+  (decomposition — WACC 14.7→10 = +60%, margin 36→60 = +38%, growth 20→45% = +71%;
+  all three at still-conservative levels ≈ market). All fixes deterministic-math,
+  fundamentals-only, never calibrated to price (user decision).
+  - *Phase 1 (rule fixes):* long-horizon beta (`wacc.py`, terminal-value-dominated
+    horizon reverts beta toward market), symmetric build-up **size premium**
+    (`wacc.py`, mega-cap −1.5% … small-cap +2.5%; NVDA WACC 14.5→12.0%),
+    durability-based **terminal-margin floor** (`assumptions.py`, steady 0.80 /
+    volatile 0.55), and a **year-1 growth floor** at half the recent pace, not the
+    terminal rate. NVDA −81→−61%.
+  - *Phase 2 (assumption agent):* `valuation/agent.py::critique_assumptions` — a
+    second "senior reviewer" pass sees the assumptions AND the fair value they
+    produce vs price and consensus, and revises the least-defensible lever from
+    fundamentals; re-clamped to the same bounds, cached per fingerprint. Wired in
+    `value_company` as probe-build → critique → final-build. NVDA −61→−29%
+    (agent lifts growth to its own 22% segment bottom-up); a `_normalise` guard
+    catches percent-vs-decimal slips. Deterministic **miscalibration flag**: when
+    our value is >35% from BOTH price and consensus (e.g. AAPL −66%/−68%), the
+    report says we are the outlier. Tests: `test_calibration.py`, `test_agent.py`.
 - Deterministic backbone: bull/base/bear **scenarios** + probability-weighted
   value (`valuation/scenarios.py`); DCF↔analyst↔comps **blend** with outlier
   rejection (`valuation/blend.py`); reverse-DCF market-implied growth.
@@ -81,20 +101,24 @@ Read this first in a new session; do **not** re-explore or rebuild the platform.
 
 ## Next batch (priority order)
 
-Nothing outstanding — the full spec list above (#3–#24) is shipped. Candidate
-follow-ups if the work continues:
+The full spec list (#3–#24) and a two-phase valuation-accuracy calibration are
+shipped. Candidate follow-ups if the work continues:
 
-1. **Feed `priced_in` / segment CAGR into the thesis LLM.** The thesis still only
-   sees `market_implied_growth`; handing it the full reverse-DCF table and the
-   22%-vs-8% segment gap would let the written argument cite "margins can't
-   justify this at any level" directly.
-2. **Pressure-test the top-down base-case growth.** The segment cross-check keeps
-   surfacing an 8% top-down CAGR vs ~22% bottom-up on NVDA — the load-bearing
-   assumption. Consider letting the segment build inform (not just check) the
-   headline forecast, still deterministically.
-3. **Multi-company regression.** Everything is verified on NVDA (a SELL); run
-   AAPL / a non-SEC filer / a low-growth name to shake out fallbacks and the
-   segment extraction on different disclosure formats.
+1. **Pass the segment bottom-up CAGR directly into the assumption agent.** The
+   agent currently re-derives growth from the history table and lands near the
+   segment number by reasoning; handing `segments.forecast_segments`'s CAGR to
+   `agent.critique_assumptions` as an explicit reference would make the link
+   deterministic and let it cite "your CAGR is below your own segment build".
+   Needs the segment build to run before `value_company` (compute once, share the
+   cached extraction) — the only mild plumbing change.
+2. **A second agent iteration + convergence guard.** Today the critique runs once.
+   A bounded loop (revise → re-evaluate → stop when the change is <2%) would catch
+   cases where one revision exposes a second stale lever. Keep it capped at 2.
+3. **Feed `priced_in` into the thesis LLM.** The thesis still only sees
+   `market_implied_growth`; the full reverse-DCF table would sharpen the argument.
+4. **Broaden the regression.** Verified on NVDA (SELL, −29%) and AAPL (SELL,
+   flagged outlier). Run a non-SEC filer (TCS — rupee/ERP + yfinance path) and a
+   genuine value name to exercise the agent's "no change" verdict and the fallbacks.
 
 ## Key files
 
