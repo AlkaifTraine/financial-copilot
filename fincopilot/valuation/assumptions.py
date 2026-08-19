@@ -220,8 +220,16 @@ def derive_inputs(
     tax_rate: float,
     qualitative_context: str = "",
     use_model: bool = True,
+    proposal_override: dict | None = None,
 ) -> ForecastInputs:
-    """Build the full set of DCF inputs, recording each in ``ledger``."""
+    """Build the full set of DCF inputs, recording each in ``ledger``.
+
+    ``proposal_override`` supplies a proposal directly (same shape as
+    :func:`_propose` returns), bypassing the model call. The agentic critique
+    pass uses it to feed back a revised assumption set, which is then clamped to
+    the same data-derived bounds as any proposal — the revision cannot escape
+    the guardrails.
+    """
     latest = history.latest
     if latest is None or not latest.revenue:
         raise ValueError("no revenue history available to forecast from")
@@ -238,7 +246,12 @@ def derive_inputs(
     margins = [y.operating_margin for y in history.years if y.operating_margin is not None]
     mean_margin = sum(margins[-3:]) / len(margins[-3:]) if margins else 0.15
 
-    proposal = _propose(history, company, qualitative_context) if use_model else {}
+    if proposal_override is not None:
+        proposal = proposal_override
+    elif use_model:
+        proposal = _propose(history, company, qualitative_context)
+    else:
+        proposal = {}
 
     # -- terminal growth --------------------------------------------------
     # Computed first because it forms the floor for the year-one growth bound.

@@ -12,6 +12,7 @@ from .blend import build_blend
 from .comps import build_comps
 from .dcf import run_dcf
 from .reverse import build_priced_in, implied_growth
+from .agent import critique_assumptions
 from .models import (
     Assumption,
     AssumptionLedger,
@@ -48,6 +49,25 @@ __all__ = [
     "PricedInRow",
     "run_dcf",
 ]
+
+
+def _dcf_from(inputs, wacc, net_debt, shares, currency):
+    """Run the DCF from a :class:`ForecastInputs`. Shared by the probe and final builds."""
+    return run_dcf(
+        base_revenue=inputs.base_revenue,
+        base_year=inputs.base_year,
+        growth_path=inputs.growth_path,
+        margin_path=inputs.margin_path,
+        tax_rate=inputs.tax_rate,
+        depreciation_pct=inputs.depreciation_pct,
+        capex_pct=inputs.capex_pct,
+        working_capital_pct=inputs.working_capital_pct,
+        wacc=wacc,
+        terminal_growth=inputs.terminal_growth,
+        net_debt=net_debt,
+        shares_outstanding=shares,
+        currency=currency,
+    )
 
 
 def value_company(
@@ -87,24 +107,11 @@ def value_company(
     wacc = compute_wacc(history, company, ledger)
     tax_rate = ledger.value("tax_rate", 0.21)
 
-    # -- forward assumptions ----------------------------------------------
-    try:
-        inputs = derive_inputs(
-            history,
-            company,
-            ledger,
-            tax_rate=tax_rate,
-            qualitative_context=qualitative_context,
-            use_model=use_model,
-        )
-    except ValueError as exc:
-        valuation.warnings.append(str(exc))
-        return valuation
-
     # -- share count ------------------------------------------------------
     # Diluted shares from the filings are preferred over the market data feed:
     # they are audited, and they include the dilution from unvested equity that
-    # a raw outstanding-share count omits.
+    # a raw outstanding-share count omits. Computed before the assumptions so the
+    # critique probe below can value them.
     latest = history.latest
     shares = latest.diluted_shares or history.shares_outstanding or 0.0
     if shares <= 0:
@@ -113,23 +120,53 @@ def value_company(
 
     net_debt = latest.net_debt if latest.net_debt is not None else 0.0
 
+    # -- forward assumptions, with an agentic critique pass ---------------
+    # The model first proposes a full assumption set. A second "senior reviewer"
+    # pass then sees the fair value those assumptions produce — and how it sits
+    # against the market price and the analyst consensus — and may revise the
+    # single least defensible lever, reasoning from the fundamentals and never to
+    # match the price. Any revision is re-clamped to the same data-derived bounds,
+    # so it stays inside the guardrails. The probe build is thrown away; only the
+    # final assumption set is recorded in the ledger.
+    proposal_override = None
+    if use_model:
+        try:
+            probe_ledger = AssumptionLedger()
+            probe_inputs = derive_inputs(
+                history, company, probe_ledger, tax_rate=tax_rate,
+                qualitative_context=qualitative_context, use_model=True,
+            )
+            probe_dcf = _dcf_from(probe_inputs, wacc, net_debt, shares, history.currency)
+            proposal_override = critique_assumptions(
+                company, history, probe_inputs, probe_dcf, wacc,
+                qualitative_context=qualitative_context,
+            )
+        except ValueError as exc:
+            log.info("assumption critique skipped: %s", exc)
+
+    try:
+        inputs = derive_inputs(
+            history,
+            company,
+            ledger,
+            tax_rate=tax_rate,
+            qualitative_context=qualitative_context,
+            use_model=use_model,
+            proposal_override=proposal_override,
+        )
+    except ValueError as exc:
+        valuation.warnings.append(str(exc))
+        return valuation
+
+    if proposal_override:
+        valuation.warnings.append(
+            "A second-pass calibration review revised one or more forward assumptions "
+            "(see the assumption rationales below); the fair value reflects the revised set."
+        )
+
     # -- the model --------------------------------------------------------
     try:
-        valuation.dcf = run_dcf(
-            base_revenue=inputs.base_revenue,
-            base_year=inputs.base_year,
-            growth_path=inputs.growth_path,
-            margin_path=inputs.margin_path,
-            tax_rate=inputs.tax_rate,
-            depreciation_pct=inputs.depreciation_pct,
-            capex_pct=inputs.capex_pct,
-            working_capital_pct=inputs.working_capital_pct,
-            wacc=wacc,
-            terminal_growth=inputs.terminal_growth,
-            net_debt=net_debt,
-            shares_outstanding=shares,
-            currency=history.currency,
-        )
+        valuation.dcf = _dcf_from(inputs, wacc, net_debt, shares, history.currency)
     except ValueError as exc:
         valuation.warnings.append(f"The discounted cash flow model could not be built: {exc}")
         return valuation
@@ -275,6 +312,29 @@ def value_company(
             f"from the terminal value, so the result is driven mainly by the "
             f"perpetuity assumption rather than the explicit forecast."
         )
+
+    # -- miscalibration flag ----------------------------------------------
+    # Our view is intrinsic and may diverge from the market. But a value far from
+    # BOTH the market price AND the independent analyst consensus, in the same
+    # direction, means we are the outlier — the assumption agent has already had a
+    # pass, so what remains is a genuine difference of view that the reader should
+    # weigh as a specific, assumption-driven contrarian call rather than a fact.
+    consensus_target = history.analyst_target_median or history.analyst_target_mean
+    if valuation.fair_value and history.share_price and consensus_target:
+        vs_price = valuation.fair_value / history.share_price - 1
+        vs_consensus = valuation.fair_value / consensus_target - 1
+        both_far = min(abs(vs_price), abs(vs_consensus)) > config.MISCALIBRATION_FLAG
+        same_side = (vs_price < 0) == (vs_consensus < 0)
+        if both_far and same_side:
+            direction = "below" if vs_price < 0 else "above"
+            valuation.warnings.append(
+                f"Our intrinsic value ({history.currency} {valuation.fair_value:,.2f}) sits "
+                f"{abs(vs_price) * 100:.0f}% {direction} the market price and "
+                f"{abs(vs_consensus) * 100:.0f}% {direction} the analyst consensus "
+                f"({history.currency} {consensus_target:,.2f}). On this name we are the outlier: "
+                f"read it as a specific, assumption-driven contrarian view, and check the "
+                f"assumptions and the 'what is priced in' table before relying on it."
+            )
 
     for assumption in ledger.clamped:
         valuation.warnings.append(

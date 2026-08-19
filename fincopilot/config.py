@@ -439,6 +439,14 @@ BLEND_OUTLIER_HIGH_MULTIPLE = 2.50      # drop above 2.50x the median estimate
 # reconciliation of two genuinely different views, not a precise number.
 BLEND_DIVERGENCE_FLAG = 0.35            # +/-35% between DCF and consensus
 
+# When our intrinsic value sits more than this away from BOTH the market price
+# AND the analyst consensus, in the same direction, we are the outlier. The
+# report flags it: an intrinsic view is allowed to diverge from the market, but a
+# lone value far from the whole street should be read as a specific, contrarian,
+# assumption-driven call — the assumption agent has already had a pass at it, so
+# what remains is a genuine difference of view, surfaced rather than buried.
+MISCALIBRATION_FLAG = 0.35             # +/-35% from BOTH price and consensus
+
 
 # ---------------------------------------------------------------------------
 # Branding (report + UI)
