@@ -322,39 +322,50 @@
   {% set cp = r.competitive %}
   <h2 class="fc-h">Competitive Moat</h2>
   <div class="fc-quality">
-    <span class="fc-chip {% if 'Wide' in cp.moat_rating %}positive{% elif cp.moat_rating == 'None' %}negative{% endif %}"><b>Moat</b> · {{ cp.moat_rating }}</span>
+    <span class="fc-chip {% if 'Wide' in cp.moat_strength %}positive{% elif cp.moat_strength == 'None' %}negative{% endif %}"><b>Moat strength</b> · {{ cp.moat_strength }}</span>
+    <span class="fc-chip {% if cp.moat_direction == 'Widening' %}positive{% elif cp.moat_direction == 'Narrowing' %}negative{% endif %}"><b>Direction</b> · {{ cp.moat_direction }}</span>
   </div>
   {% if cp.moat_summary %}<p class="fc-quality-note">{{ cp.moat_summary }}</p>{% endif %}
-  {% if cp.moat_sources or cp.competitive_threats %}
-  <div class="fc-view">
-    {% if cp.moat_sources %}
-    <div class="col bull"><h4>Sources of advantage</h4>
-      <ul>{% for s in cp.moat_sources %}<li>{{ s }}</li>{% endfor %}</ul></div>
-    {% endif %}
-    {% if cp.competitive_threats %}
-    <div class="col bear"><h4>Threats to the moat</h4>
-      <ul>{% for s in cp.competitive_threats %}<li>{{ s }}</li>{% endfor %}</ul></div>
-    {% endif %}
-  </div>
+  {% if cp.dimensions %}
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr style="text-align:left;">
+      <th>Source of advantage</th><th style="text-align:left;">Assessment</th><th style="text-align:left;white-space:nowrap;">Strength</th>
+    </tr></thead>
+    <tbody>
+    {% for d in cp.dimensions %}
+      <tr>
+        <td><strong>{{ d.dimension }}</strong></td>
+        <td style="text-align:left;">{{ d.assessment }}</td>
+        <td style="text-align:left;white-space:nowrap;">{{ d.strength }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% if cp.competitive_threats %}
+  <p style="font-size:12.5px;color:var(--ink-2);margin-top:6px;"><strong>Threats to the moat:</strong></p>
+  <ul class="fc-bullets">{% for s in cp.competitive_threats %}<li>{{ s }}</li>{% endfor %}</ul>
   {% endif %}
   {% if cp.management_vs_us %}
   <h2 class="fc-h">Management Says vs Our View</h2>
   <p style="font-size:12.5px;color:var(--ink-2);">
-    Where our modelled view meets management's own. The rows that matter are the ones where we
-    are more cautious than the company — that gap is where the thesis lives.
+    Only <em>actual, sourced</em> management statements appear here — never a forecast put in
+    management's mouth. Each runs from what they said, to what we take it to mean, to what we
+    model, to the difference. The rows where we are more cautious than the company are where
+    the thesis lives.
   </p>
   <div class="fc-scroll"><table class="fc-t">
     <thead><tr style="text-align:left;">
-      <th>Topic</th><th style="text-align:left;">Management says</th>
-      <th style="text-align:left;">Our view</th><th style="text-align:left;">Our take</th>
+      <th>Topic</th><th style="text-align:left;">Management statement (source)</th>
+      <th style="text-align:left;">Our interpretation → our model</th><th style="text-align:left;">Difference</th>
     </tr></thead>
     <tbody>
     {% for m in cp.management_vs_us %}
       <tr>
         <td><strong>{{ m.topic }}</strong></td>
-        <td style="text-align:left;">{{ m.management_says }}</td>
-        <td style="text-align:left;">{{ m.our_view }}</td>
-        <td style="text-align:left;white-space:nowrap;">{{ m.assessment }}</td>
+        <td style="text-align:left;">{{ m.management_statement }}{% if m.source %}<br><span style="color:var(--muted);font-size:11px;">Source: {{ m.source }}</span>{% endif %}</td>
+        <td style="text-align:left;">{{ m.our_interpretation }}{% if m.our_model %}<br><span style="color:var(--muted);font-size:11px;">We model: {{ m.our_model }}</span>{% endif %}</td>
+        <td style="text-align:left;">{{ m.difference }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -441,10 +452,12 @@
   {% if r.blended and r.blended.estimates|length > 1 %}
   <h2 class="fc-h">How We Reach the Number</h2>
   <p style="font-size:12.5px;color:var(--ink-2);">
-    The headline figure is not a single model's output but a reconciliation of several
-    independent valuations. Each source is weighted by the confidence it earns — the
-    analyst consensus by how many analysts stand behind it — and shown here so the blend
-    is auditable. Our intrinsic DCF is one voice; the market's consensus is another.
+    Our target price is derived from OUR OWN methods — the intrinsic DCF, the
+    probability-weighted scenario value, and a comparable-companies read — each weighted by
+    the confidence it earns. The Wall Street consensus is shown alongside as an
+    <strong>external market reference</strong>, not blended into our number: it is what the
+    market believes, the counter-view our thesis is weighed against, not an input to our
+    intrinsic target.
   </p>
   <div class="fc-scroll"><table class="fc-t">
     <thead><tr><th>Source</th><th>Value / share</th><th>Weight</th><th>Detail</th><th>Link</th></tr></thead>

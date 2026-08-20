@@ -99,22 +99,39 @@ class TestCompetitiveFallback:
 
 
 class TestCompetitiveModelPath:
-    def test_parses_moat_and_management(self, monkeypatch):
+    def test_parses_moat_strength_direction_and_management(self, monkeypatch):
         payload = {
-            "moat_rating": "Wide",
-            "moat_summary": "CUDA lock-in defends the margin.",
-            "moat_sources": ["CUDA ecosystem", "scale"],
+            "moat_strength": "Wide",
+            "moat_direction": "Narrowing",
+            "moat_summary": "CUDA lock-in defends the margin, but custom silicon is closing in.",
+            "dimensions": [
+                {"dimension": "Software ecosystem (CUDA)", "assessment": "Deep lock-in", "strength": "Strong"},
+            ],
             "competitive_threats": ["custom ASICs"],
             "management_vs_us": [
-                {"topic": "Growth", "management_says": "durable demand",
-                 "our_view": "fades to 8%", "assessment": "More cautious"},
+                {"topic": "Growth", "management_statement": "We expect continued strong demand",
+                 "source": "FY2026 10-K MD&A", "our_interpretation": "Bullish tone",
+                 "our_model": "growth fades toward mature rate", "difference": "We are more cautious"},
             ],
         }
         monkeypatch.setattr(competitive_mod, "complete_json", lambda *a, **k: payload)
         analysis = generate_competitive(_Company(), _History(), _valuation())
         assert analysis.generated is True
-        assert analysis.moat_rating == "Wide"
-        assert analysis.management_vs_us[0].assessment == "More cautious"
+        # Strength and direction are scored SEPARATELY.
+        assert analysis.moat_strength == "Wide"
+        assert analysis.moat_direction == "Narrowing"
+        assert analysis.dimensions[0].strength == "Strong"
+        assert analysis.management_vs_us[0].source == "FY2026 10-K MD&A"
+
+    def test_management_row_without_a_real_statement_is_dropped(self, monkeypatch):
+        # A row with no sourced statement must not be fabricated into the table.
+        payload = {
+            "moat_strength": "Narrow", "moat_direction": "Stable", "moat_summary": "ok",
+            "management_vs_us": [{"topic": "Growth", "our_model": "8%", "difference": "x"}],
+        }
+        monkeypatch.setattr(competitive_mod, "complete_json", lambda *a, **k: payload)
+        analysis = generate_competitive(_Company(), _History(), _valuation())
+        assert analysis.management_vs_us == []
 
     def test_garbage_falls_back(self, monkeypatch):
         monkeypatch.setattr(competitive_mod, "complete_json", lambda *a, **k: 123)

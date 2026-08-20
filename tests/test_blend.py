@@ -139,14 +139,29 @@ class TestRatingAndUpside:
 
 
 class TestBuildBlend:
-    def test_dcf_plus_analyst(self):
+    def test_consensus_is_an_external_reference_not_blended(self):
+        # The analyst consensus is shown but NOT folded into our target: our
+        # number stays intrinsic (the DCF here), with the consensus recorded as an
+        # excluded external reference.
         h = _history(analyst_target_median=200.0, analyst_opinion_count=40,
                      share_price=150.0)
         result = build_blend(dcf_value=50.0, history=h, ticker="TEST",
                              share_price=150.0, currency="USD")
         assert {e.key for e in result.estimates} == {"dcf", "analyst_consensus"}
-        # Analyst is weighted more heavily, so the blend sits above the midpoint.
-        assert result.blended_value > 125.0
+        assert result.blended_value == pytest.approx(50.0)
+        analyst = next(e for e in result.estimates if e.key == "analyst_consensus")
+        assert analyst.included is False
+        assert analyst.weight == 0.0
+        assert "external market reference" in analyst.exclude_reason.lower()
+
+    def test_scenario_value_blends_with_dcf(self):
+        # Our own scenario value IS an intrinsic input and is blended.
+        h = _history(share_price=150.0)
+        result = build_blend(dcf_value=50.0, history=h, ticker="TEST",
+                             share_price=150.0, currency="USD", scenario_value=70.0)
+        assert {e.key for e in result.estimates} == {"dcf", "scenario"}
+        # Weighted average of 50 (w=1.0) and 70 (w=0.8): (50 + 56)/1.8 ≈ 58.9
+        assert 50.0 < result.blended_value < 70.0
 
     def test_degrades_to_dcf_without_coverage(self):
         h = _history(share_price=150.0)  # no analyst targets

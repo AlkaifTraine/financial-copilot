@@ -269,6 +269,8 @@ def value_company(
         ticker=company.ticker,
         share_price=history.share_price,
         currency=history.currency,
+        comps_value=valuation.comps.implied_value_per_share if valuation.comps else None,
+        scenario_value=valuation.scenarios.expected_value if valuation.scenarios else None,
     )
 
     # -- diagnostics ------------------------------------------------------

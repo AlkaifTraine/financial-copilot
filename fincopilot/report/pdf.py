@@ -453,16 +453,33 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
     if cp:
         story.append(Paragraph("COMPETITIVE MOAT", styles["h2"]))
         story.append(Paragraph(
-            f"<b>Moat rating:</b> {cp.get('moat_rating', 'Undetermined')}", styles["small"]
+            f"<b>Moat strength (today):</b> {cp.get('moat_strength', 'Undetermined')} "
+            f"&nbsp;·&nbsp; <b>Direction:</b> {cp.get('moat_direction', 'Stable')}",
+            styles["small"],
         ))
         if cp.get("moat_summary"):
             story.append(Paragraph(cp["moat_summary"], styles["body"]))
-        if cp.get("moat_sources"):
-            story.append(Paragraph("<b>Sources of advantage:</b>", styles["small"]))
-            story.append(ListFlowable(
-                [ListItem(Paragraph(s, styles["bullet"]), leftIndent=10) for s in cp["moat_sources"]],
-                bulletType="bullet", start="–", leftIndent=12, bulletFontSize=7,
-            ))
+        if cp.get("dimensions"):
+            story.append(Spacer(1, 3))
+            header = ["Source of advantage", "Assessment", "Strength"]
+            rows = [[Paragraph(h, styles["cellb"]) for h in header]]
+            for dim in cp["dimensions"]:
+                rows.append([
+                    Paragraph(f"<b>{dim.get('dimension', '')}</b>", styles["cell"]),
+                    Paragraph(dim.get("assessment", ""), styles["cell"]),
+                    Paragraph(dim.get("strength", ""), styles["cell"]),
+                ])
+            widths = [CONTENT_WIDTH * w for w in (0.28, 0.55, 0.17)]
+            table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+            table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
+                ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(table)
         if cp.get("competitive_threats"):
             story.append(Paragraph("<b>Threats to the moat:</b>", styles["small"]))
             story.append(ListFlowable(
@@ -472,31 +489,36 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         if cp.get("management_vs_us"):
             story.append(Paragraph("MANAGEMENT SAYS VS OUR VIEW", styles["h2"]))
             story.append(Paragraph(
-                "Where our modelled view meets management's own. The rows that matter are the "
-                "ones where we are more cautious than the company.",
+                "Only actual, sourced management statements appear — never a forecast put in "
+                "management's mouth. Each runs from what they said to what we model to the "
+                "difference; the rows where we are more cautious are where the thesis lives.",
                 styles["small"],
             ))
             story.append(Spacer(1, 4))
-            header = ["Topic", "Management says", "Our view", "Our take"]
+            header = ["Topic", "Management statement (source)", "Our interpretation / model", "Difference"]
             rows = [[Paragraph(h, styles["cellb"]) for h in header]]
             for claim in cp["management_vs_us"]:
+                statement = claim.get("management_statement", "")
+                if claim.get("source"):
+                    statement += f'<br/><font size="6.5" color="#7c8794">Source: {claim["source"]}</font>'
+                view = claim.get("our_interpretation", "")
+                if claim.get("our_model"):
+                    view += f'<br/><font size="6.5" color="#7c8794">We model: {claim["our_model"]}</font>'
                 rows.append([
                     Paragraph(f"<b>{claim.get('topic', '')}</b>", styles["cell"]),
-                    Paragraph(claim.get("management_says", ""), styles["cell"]),
-                    Paragraph(claim.get("our_view", ""), styles["cell"]),
-                    Paragraph(claim.get("assessment", ""), styles["cell"]),
+                    Paragraph(statement, styles["cell"]),
+                    Paragraph(view, styles["cell"]),
+                    Paragraph(claim.get("difference", ""), styles["cell"]),
                 ])
-            widths = [CONTENT_WIDTH * w for w in (0.18, 0.30, 0.30, 0.22)]
+            widths = [CONTENT_WIDTH * w for w in (0.15, 0.32, 0.32, 0.21)]
             table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
                 ("LINEBELOW", (0, 0), (-1, -1), 0.4, RULE),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]))
             story.append(table)
 
@@ -572,10 +594,11 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         story.append(PageBreak())
         story.append(Paragraph("HOW WE REACH THE NUMBER", styles["h2"]))
         story.append(Paragraph(
-            "The headline figure reconciles several independent valuations, each weighted "
-            "by the confidence it earns — the analyst consensus by how many analysts stand "
-            "behind it. Every source is shown so the blend is auditable: our intrinsic DCF "
-            "is one voice, the market's consensus another.",
+            "Our target price is derived from OUR OWN methods — the intrinsic DCF, the "
+            "probability-weighted scenario value, and a comparable-companies read. The Wall "
+            "Street consensus is shown alongside as an <b>external market reference</b>, not "
+            "blended into our number: it is what the market believes, weighed against our "
+            "view, not an input to our intrinsic target.",
             styles["small"],
         ))
         story.append(Spacer(1, 4))

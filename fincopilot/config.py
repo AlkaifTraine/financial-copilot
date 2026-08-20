@@ -439,10 +439,20 @@ SCENARIO_MAX_MARGIN_SPREAD = 0.12      # at most +/-12pp
 # for later use and weighted lower, reflecting their looser link to value.
 BLEND_SOURCE_WEIGHTS = {
     "model": 1.0,       # our DCF
+    "scenario": 0.8,    # probability-weighted scenario value (our own)
     "analyst": 1.0,     # per-unit weight, then scaled by analyst count
     "comps": 0.7,
     "web": 0.4,
 }
+
+# The analyst consensus is an EXTERNAL market reference, NOT an intrinsic input.
+# Our target price is derived from OUR OWN methods (DCF, comps, the
+# probability-weighted scenario value); the consensus is shown alongside for
+# comparison but is not blended into the number. An earlier design gave the
+# consensus up to 3x the DCF weight and folded it in, which quietly turned the
+# "intrinsic" target into a mostly-market number — the opposite of the stated
+# philosophy. Flip to True only with a principled methodology for weighting it.
+BLEND_INCLUDE_CONSENSUS = False
 
 # Analyst-consensus confidence scales with coverage: full unit weight is reached
 # at this many analysts, and the multiplier is capped so a single mega-cap with

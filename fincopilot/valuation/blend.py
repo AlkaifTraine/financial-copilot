@@ -174,12 +174,16 @@ def build_blend(
     share_price: float | None,
     currency: str,
     comps_value: float | None = None,
+    scenario_value: float | None = None,
 ) -> BlendedValuation:
-    """Assemble every available valuation and blend them.
+    """Assemble OUR valuation methods into one target; show consensus alongside.
 
-    Always includes the DCF (our intrinsic view) when present. Adds the analyst
-    consensus when the stock has coverage, and a comps-implied value when one is
-    supplied. Returns an empty blend if there is nothing to combine.
+    Our target price is derived from our own framework — the intrinsic DCF, the
+    probability-weighted scenario value, and a comps-implied value where one
+    exists. The Wall Street consensus is added as an EXTERNAL market reference:
+    shown for comparison, but not blended into the number (unless
+    ``BLEND_INCLUDE_CONSENSUS`` is set), so the target stays an intrinsic view
+    rather than a mostly-market one.
     """
     estimates: list[ValuationEstimate] = []
 
@@ -197,9 +201,19 @@ def build_blend(
             )
         )
 
-    analyst = build_analyst_estimate(history, ticker, currency)
-    if analyst is not None:
-        estimates.append(analyst)
+    if scenario_value and scenario_value > 0:
+        estimates.append(
+            ValuationEstimate(
+                key="scenario",
+                label="Scenario expected value",
+                source_type="model",
+                value_per_share=scenario_value,
+                weight=config.BLEND_SOURCE_WEIGHTS["scenario"],
+                currency=currency,
+                source_name="Probability-weighted bear/base/bull",
+                detail="Our own scenario set, weighted by analyst-assigned probabilities",
+            )
+        )
 
     if comps_value and comps_value > 0:
         estimates.append(
@@ -214,5 +228,19 @@ def build_blend(
                 detail="Peer median P/E applied to trailing EPS",
             )
         )
+
+    # The analyst consensus is added for display but, by default, carries no
+    # weight in our target — it is the market's view, shown next to ours, not an
+    # input to it. Recorded as excluded with a plain reason so the table is clear.
+    analyst = build_analyst_estimate(history, ticker, currency)
+    if analyst is not None:
+        if not config.BLEND_INCLUDE_CONSENSUS:
+            analyst.weight = 0.0
+            analyst.included = False
+            analyst.exclude_reason = (
+                "External market reference — shown for comparison, not blended into our "
+                "intrinsic target"
+            )
+        estimates.append(analyst)
 
     return blend_estimates(estimates, share_price=share_price, currency=currency)
