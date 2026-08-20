@@ -173,3 +173,37 @@ class TestMoatReproducibility:
     def test_empty_dimensions_yield_no_derivation(self):
         from fincopilot.report.competitive import derive_moat_strength
         assert derive_moat_strength([]) == ("", "")
+
+
+class TestFiscalTimingCorrection:
+    @staticmethod
+    def _history(period_end):
+        from types import SimpleNamespace
+        return SimpleNamespace(years=[SimpleNamespace(period_end=period_end)])
+
+    def test_offset_fiscal_quarter_is_corrected(self):
+        from fincopilot.report.monitoring import Catalyst, correct_fiscal_timing
+        # January fiscal year-end (NVIDIA): Q1 FY2027 ends ~Apr 2026, reports ~May 2026.
+        cats = [Catalyst(event="earnings", timing="Q1 FY2027 (April-June 2027)",
+                         direction="Two-sided", metric="rev")]
+        assert correct_fiscal_timing(cats, self._history("2025-01-31")) == 1
+        assert "May 2026" in cats[0].timing and "Q1 FY2027" in cats[0].timing
+
+    def test_already_correct_label_is_left_alone(self):
+        from fincopilot.report.monitoring import Catalyst, correct_fiscal_timing
+        cats = [Catalyst(event="earnings", timing="Q3 FY2027 earnings, ~November 2026",
+                         direction="Two-sided", metric="rev")]
+        assert correct_fiscal_timing(cats, self._history("2025-01-31")) == 0
+
+    def test_calendar_fiscal_year_maps_normally(self):
+        from fincopilot.report.monitoring import Catalyst, correct_fiscal_timing
+        # December fiscal year-end: Q1 FY2027 ends ~Mar 2027, reports ~Apr 2027.
+        cats = [Catalyst(event="earnings", timing="Q1 FY2027", direction="x", metric="y")]
+        assert correct_fiscal_timing(cats, self._history("2025-12-31")) == 1
+        assert "April 2027" in cats[0].timing
+
+    def test_no_fiscal_year_end_no_change(self):
+        from types import SimpleNamespace
+        from fincopilot.report.monitoring import Catalyst, correct_fiscal_timing
+        cats = [Catalyst(event="e", timing="Q1 FY2027", direction="x", metric="y")]
+        assert correct_fiscal_timing(cats, SimpleNamespace(years=[])) == 0

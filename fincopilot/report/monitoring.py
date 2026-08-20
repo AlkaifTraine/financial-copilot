@@ -27,6 +27,8 @@ log = logging.getLogger(__name__)
 
 _MONTH3 = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+_MONTH_NAMES = ["", "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"]
 
 
 def _year_month(text: str) -> tuple[int, int] | None:
@@ -65,6 +67,60 @@ def classify_catalysts(catalysts: list["Catalyst"], as_of: str | None):
         else:
             upcoming.append(catalyst)
     return upcoming, passed
+
+
+def _fiscal_year_end_month(history: FinancialHistory) -> int | None:
+    """The company's fiscal year-end month, from its latest reported period end."""
+    for year in reversed(getattr(history, "years", []) or []):
+        moment = _year_month(getattr(year, "period_end", "") or "")
+        if moment is not None:
+            return moment[1]
+    return None
+
+
+def correct_fiscal_timing(catalysts: list["Catalyst"], history: FinancialHistory) -> int:
+    """Rewrite catalyst timings whose fiscal-quarter label maps to the wrong calendar.
+
+    LLMs are unreliable at fiscal-quarter arithmetic — NVIDIA's Q1 FY2027 ends in
+    ~April 2026, not 2027, because its fiscal year is offset. When a timing names a
+    fiscal quarter ("Q1 FY2027"), the correct earnings window is DERIVED from the
+    company's fiscal year-end and substituted if the stated calendar date is off by
+    more than a quarter. Returns the number of corrections made.
+    """
+    fye_month = _fiscal_year_end_month(history)
+    if fye_month is None:
+        return 0
+    corrected = 0
+    for catalyst in catalysts:
+        match = re.search(r"\bQ([1-4])\s*FY\s?['’]?(\d{2,4})\b", catalyst.timing, re.I)
+        if not match:
+            continue
+        quarter = int(match.group(1))
+        fiscal_year = int(match.group(2))
+        if fiscal_year < 100:
+            fiscal_year += 2000
+        # Quarter-end: Q4 lands on the fiscal year-end month; each earlier quarter is
+        # three months before, wrapping into the prior calendar year as needed.
+        end_month = fye_month - 3 * (4 - quarter)
+        end_year = fiscal_year
+        while end_month <= 0:
+            end_month += 12
+            end_year -= 1
+        # Results are reported ~a month after the quarter closes.
+        report_month = end_month + 1
+        report_year = end_year
+        if report_month > 12:
+            report_month -= 12
+            report_year += 1
+        stated = _year_month(catalyst.timing)
+        computed = report_year * 12 + report_month
+        if stated is None or abs((stated[0] * 12 + stated[1]) - computed) > 2:
+            catalyst.timing = (
+                f"Q{quarter} FY{fiscal_year} earnings, "
+                f"~{_MONTH_NAMES[report_month]} {report_year}"
+            )
+            corrected += 1
+    return corrected
 
 
 @dataclass
@@ -168,7 +224,7 @@ The report's as-of date is {as_of}. Everything below is forward-looking from THA
 
 Produce two things.
 
-1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing (a concrete future date/month, after the as-of date), direction (Positive / Negative / Two-sided), metric (what it moves).
+1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing (a concrete future date/month, after the as-of date), direction (Positive / Negative / Two-sided), metric (what it moves). When you name a fiscal quarter, pair it with the correct CALENDAR month — fiscal years are often offset from the calendar (a January fiscal year-end means Q1 ends ~April of the PRIOR calendar year to the fiscal-year name).
 2. watch_items: 4-6 metrics to monitor, each tied to a SPECIFIC model assumption it tests. Each: metric, assumption (the model assumption it checks — quote our number), current (latest reading), trend (direction of travel), expected (what our assumption implies it should do), bull_bear (the value/trend that would make us more bullish, and the one that would make us more bearish).
 
 Return JSON:
@@ -216,6 +272,7 @@ def generate_forward(
     """Produce the catalysts and monitoring dashboard, grounded in the valuation."""
     if not use_model or valuation.dcf is None:
         view = _fallback(history, valuation)
+        correct_fiscal_timing(view.catalysts, history)
         view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
         return view
 
@@ -263,11 +320,15 @@ def generate_forward(
 
     if not catalysts and not watch_items:
         view = _fallback(history, valuation)
+        correct_fiscal_timing(view.catalysts, history)
         view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
         return view
 
-    # Deterministic backstop: drop any event that has already happened by the
-    # as-of date, whatever the model returned. A past event can never be a catalyst.
+    # Fix fiscal-quarter labels that map to the wrong calendar year, THEN drop any
+    # event already past by the as-of date — correcting first means a mislabelled
+    # quarter is filtered on its true date, whatever the model returned.
+    if correct_fiscal_timing(catalysts, history):
+        log.info("corrected fiscal-quarter timing on one or more catalysts")
     upcoming, passed = classify_catalysts(catalysts, as_of)
     if passed:
         log.info("dropped %d past-dated catalyst(s) before %s", len(passed), as_of)
