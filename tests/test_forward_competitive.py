@@ -65,7 +65,9 @@ class TestForwardFallback:
         # The growth watch item must carry both the implied and our base CAGR.
         watch = next((w for w in view.watch_items if "rowth" in w.metric), None)
         assert watch is not None
-        assert "30.0%" in watch.why and "8.0%" in watch.expected
+        # It maps to our base-case assumption and carries the bull/bear thresholds.
+        assert "8.0%" in watch.assumption
+        assert "30.0%" in watch.bull_bear and "8.0%" in watch.bull_bear
 
 
 class TestForwardModelPath:

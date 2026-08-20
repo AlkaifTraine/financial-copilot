@@ -212,10 +212,16 @@
     {% if t.business_quality_note %}<p class="fc-quality-note">{{ t.business_quality_note }}</p>{% endif %}
 
     <div class="fc-vs">
-      {% if t.what_market_prices_in %}<div><span class="k">What the market prices in</span><p>{{ t.what_market_prices_in }}</p></div>{% endif %}
-      {% if t.what_we_expect %}<div><span class="k">What we expect</span><p>{{ t.what_we_expect }}</p></div>{% endif %}
+      {% if t.what_market_prices_in %}<div><span class="k">1 · What the market prices in</span><p>{{ t.what_market_prices_in }}</p></div>{% endif %}
+      {% if t.what_we_expect %}<div><span class="k">2 · What we expect</span><p>{{ t.what_we_expect }}</p></div>{% endif %}
     </div>
-    {% if t.the_gap %}<p class="fc-gap"><b>The gap.</b> {{ t.the_gap }}</p>{% endif %}
+    {% if t.fundamental_difference or t.financial_impact or t.valuation_impact %}
+    <div class="fc-gap">
+      {% if t.fundamental_difference %}<p style="margin:0 0 5px;"><b>3 · Why they differ (fundamental).</b> {{ t.fundamental_difference }}</p>{% endif %}
+      {% if t.financial_impact %}<p style="margin:0 0 5px;"><b>4 · Financial impact.</b> {{ t.financial_impact }}</p>{% endif %}
+      {% if t.valuation_impact %}<p style="margin:0;"><b>5 · Valuation impact → {{ r.rating }}.</b> {{ t.valuation_impact }}</p>{% endif %}
+    </div>
+    {% elif t.the_gap %}<p class="fc-gap"><b>The gap.</b> {{ t.the_gap }}</p>{% endif %}
 
     {% if t.thesis_points %}
     <div class="fc-why"><span class="k">Why {{ r.rating }}</span>
@@ -425,22 +431,23 @@
   {% if r.forward.watch_items %}
   <h2 class="fc-h">What to Watch</h2>
   <p style="font-size:12.5px;color:var(--ink-2);">
-    The metrics the valuation is most exposed to, with what our thesis expects each to do — so a
-    reader can tell when reality diverges from our view.
+    Each metric tests a specific assumption in our model, so the dashboard is a falsifiability
+    check on our own thesis: it says what our assumption expects, and the value or trend that
+    would push us more bullish or more bearish.
   </p>
   <div class="fc-scroll"><table class="fc-t">
     <thead><tr style="text-align:left;">
-      <th>Metric</th><th style="text-align:left;">Current</th><th style="text-align:left;">Trend</th>
-      <th style="text-align:left;">What we expect</th><th style="text-align:left;">Why it matters</th>
+      <th>Metric (tests)</th><th style="text-align:left;">Current</th><th style="text-align:left;">Trend</th>
+      <th style="text-align:left;">What we expect</th><th style="text-align:left;">More bullish / bearish if</th>
     </tr></thead>
     <tbody>
     {% for w in r.forward.watch_items %}
       <tr>
-        <td><strong>{{ w.metric }}</strong></td>
+        <td><strong>{{ w.metric }}</strong>{% if w.assumption %}<br><span style="color:var(--muted);font-size:11px;">tests: {{ w.assumption }}</span>{% endif %}</td>
         <td style="text-align:left;">{{ w.current }}</td>
         <td style="text-align:left;white-space:nowrap;">{{ w.trend }}</td>
         <td style="text-align:left;">{{ w.expected }}</td>
-        <td style="text-align:left;">{{ w.why }}</td>
+        <td style="text-align:left;">{{ w.bull_bear }}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -508,6 +515,7 @@
   {% for row in r.priced_in.rows if row.note %}
   <div class="fc-evidence"><strong>{{ row.label }}.</strong> {{ row.note }}</div>
   {% endfor %}
+  {% if r.priced_in.summary %}<p class="fc-implication"><strong>What's doing the work.</strong> {{ r.priced_in.summary }}</p>{% endif %}
   <p style="font-size:12.5px;color:var(--ink-2);margin-top:8px;">
     Read together, these are what the price assumes if the market is right about everything
     else. A gap the company has never closed in its own history is the risk in owning it here;

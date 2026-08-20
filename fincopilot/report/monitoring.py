@@ -40,13 +40,14 @@ class Catalyst:
 
 @dataclass
 class WatchItem:
-    """One line of the monitoring dashboard."""
+    """One line of the monitoring dashboard, tied to a specific thesis assumption."""
 
     metric: str
+    assumption: str              # the model assumption this metric tests
     current: str                 # latest reading
     trend: str                   # direction of travel
-    expected: str                # what our thesis expects it to do
-    why: str                     # why it matters to the valuation
+    expected: str                # what our thesis/assumption expects it to do
+    bull_bear: str               # the value/trend that would make us more bullish or bearish
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -108,7 +109,7 @@ Rules:
 - Catalysts must be DATED or timeable events (earnings, product launches, regulatory decisions, contract renewals), each with the direction it points and the single metric it would move. No vague "market conditions".
 - Guidance discipline: any guidance figure must carry its period (a named quarter, a full fiscal year, a calendar year, or multi-year). Many companies (NVIDIA included) guide only ONE QUARTER ahead — never present single-quarter guidance as annual/full-year.
 - The monitoring dashboard tracks the few metrics the VALUATION is most exposed to — the levers the price is leaning on — not a generic KPI dump.
-- Every "expected" is what OUR thesis implies should happen, so a reader can tell when reality diverges from our view.
+- Every watch item MUST map to a specific model ASSUMPTION it tests (e.g. our year-1 growth, our terminal margin, our WACC), and state the value/trend that would make us more BULLISH or more BEARISH — so the dashboard is a falsifiability check on our own thesis, not a KPI list.
 - Specific and quantitative. Tie each item to a figure where the data allows."""
 
 _PROMPT = """Company: {company}
@@ -122,11 +123,11 @@ Filings context (guidance, product roadmap, upcoming events):
 Produce two things.
 
 1. catalysts: 3-5 upcoming events that could move the stock. Each: event, timing (be concrete about when), direction (Positive / Negative / Two-sided), metric (what it moves).
-2. watch_items: 4-6 metrics to monitor between catalysts, chosen because the valuation is exposed to them. Each: metric, current (latest reading), trend (direction of travel), expected (what our thesis expects), why (why it matters to fair value).
+2. watch_items: 4-6 metrics to monitor, each tied to a SPECIFIC model assumption it tests. Each: metric, assumption (the model assumption it checks — quote our number), current (latest reading), trend (direction of travel), expected (what our assumption implies it should do), bull_bear (the value/trend that would make us more bullish, and the one that would make us more bearish).
 
 Return JSON:
 {{"catalysts": [{{"event": "...", "timing": "...", "direction": "...", "metric": "..."}}],
-  "watch_items": [{{"metric": "...", "current": "...", "trend": "...", "expected": "...", "why": "..."}}]}}"""
+  "watch_items": [{{"metric": "...", "assumption": "...", "current": "...", "trend": "...", "expected": "...", "bull_bear": "..."}}]}}"""
 
 
 def _fallback(history: FinancialHistory, valuation) -> ForwardView:
@@ -145,12 +146,13 @@ def _fallback(history: FinancialHistory, valuation) -> ForwardView:
     if growth_row and growth_row.implied_value is not None:
         view.watch_items.append(WatchItem(
             metric="Revenue growth",
+            assumption=f"Our base-case CAGR of {growth_row.base_display}",
             current="Latest reported YoY growth",
             trend="—",
-            expected=f"Our base case implies a {growth_row.base_display} CAGR",
-            why=(
-                f"The price already assumes a {growth_row.implied_display} CAGR; the gap to our "
-                f"base case is the core of the thesis."
+            expected=f"Decelerating toward our {growth_row.base_display} base-case CAGR",
+            bull_bear=(
+                f"More bullish if growth holds above the {growth_row.implied_display} the price "
+                f"implies; more bearish if it falls below our {growth_row.base_display} base case."
             ),
         ))
     return view
@@ -199,10 +201,11 @@ def generate_forward(
     watch_items = [
         WatchItem(
             metric=_str(entry, "metric"),
+            assumption=_str(entry, "assumption"),
             current=_str(entry, "current"),
             trend=_str(entry, "trend"),
             expected=_str(entry, "expected"),
-            why=_str(entry, "why"),
+            bull_bear=_str(entry, "bull_bear") or _str(entry, "why"),
         )
         for entry in (payload.get("watch_items") or [])
         if isinstance(entry, dict) and _str(entry, "metric")

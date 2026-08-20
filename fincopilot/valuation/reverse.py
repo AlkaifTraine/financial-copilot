@@ -362,4 +362,33 @@ def build_priced_in(
         share_price=share_price,
         dcf_fair_value=base_dcf.fair_value_per_share,
         horizon=horizon,
+        summary=_priced_in_summary(rows),
     )
+
+
+def _priced_in_summary(rows: list[PricedInRow]) -> str:
+    """Which single assumption the price leans on most — the work-done synthesis."""
+    reachable = [r for r in rows if r.implied_value is not None]
+    unreachable = [r for r in rows if r.implied_value is None]
+
+    if not reachable:
+        return (
+            "No single driver can reach the price within a plausible range: the price assumes a "
+            "combination more optimistic than any one lever on its own."
+        )
+
+    # The lever the market stretches furthest above our base is doing the most work.
+    dominant = max(reachable, key=lambda r: r.implied_value - r.base_value)
+    parts = [
+        f"Most of the work is done by {dominant.label.lower()}: the price implies "
+        f"{dominant.implied_display} against our {dominant.base_display} ({dominant.gap_display}) — "
+        f"the bull case is, before anything else, a bet that this holds."
+    ]
+    if unreachable:
+        names = ", ".join(r.label.lower() for r in unreachable)
+        it = "them" if len(unreachable) > 1 else "it"
+        parts.append(
+            f"By contrast, {names} cannot reach the price alone at any plausible level, so the "
+            f"price is not resting on {it}."
+        )
+    return " ".join(parts)

@@ -494,6 +494,7 @@ class PricedInComparison:
     share_price: float | None = None
     dcf_fair_value: float | None = None
     horizon: int = 0
+    summary: str = ""     # which assumption the price leans on most
 
     def to_dict(self) -> dict:
         return {
@@ -502,6 +503,7 @@ class PricedInComparison:
             "share_price": self.share_price,
             "dcf_fair_value": self.dcf_fair_value,
             "horizon": self.horizon,
+            "summary": self.summary,
         }
 
 

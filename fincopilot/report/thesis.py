@@ -40,9 +40,14 @@ class InvestmentThesis:
     business_quality_note: str = ""   # one line on why
     headline: str = ""                # the thesis in one sentence
 
-    what_market_prices_in: str = ""
-    what_we_expect: str = ""
-    the_gap: str = ""                 # why they differ, and the valuation consequence
+    # The causal chain (P2.12): each link follows from the one before, so the
+    # recommendation is the CONCLUSION of an argument, not just "DCF < price".
+    what_market_prices_in: str = ""   # 1. market expectation
+    what_we_expect: str = ""          # 2. our expectation
+    fundamental_difference: str = ""  # 3. the fundamental reason they differ
+    financial_impact: str = ""        # 4. what that does to the financials
+    valuation_impact: str = ""        # 5. what that does to the valuation
+    the_gap: str = ""                 # (legacy) short summary of the gap
 
     thesis_points: list[str] = field(default_factory=list)   # 3-5 reasons
     biggest_catalyst: str = ""
@@ -149,23 +154,28 @@ _PROMPT = """Write the investment thesis for this company, grounded in the compu
 Management commentary retrieved from the filings (context, evaluate it — do not treat claims as established fact):
 {context}
 
+Build the thesis as a CAUSAL CHAIN — each step must follow from the one before, so the recommendation is the conclusion of an argument, not "our DCF is below the price, therefore SELL". The chain is: market expectation -> our expectation -> the FUNDAMENTAL reason they differ -> what that does to the financials -> what that does to the valuation -> the recommendation.
+
 Return JSON with exactly these keys:
 {{
   "business_quality": "one of: Exceptional / Strong / Average / Challenged",
   "business_quality_note": "one sentence on why, citing a specific strength or weakness",
   "headline": "the thesis in ONE sentence, e.g. 'An exceptional franchise, but at {price} the market is paying for growth and margins we think normalise'",
-  "what_market_prices_in": "1-2 sentences on what the current price assumes, anchored to the reverse-DCF implied growth",
-  "what_we_expect": "1-2 sentences on our base case, anchored to our growth/margin assumptions",
-  "the_gap": "1-2 sentences: why market and our expectations differ, and the valuation consequence",
+  "what_market_prices_in": "step 1 - what the current price assumes, anchored to the reverse-DCF implied growth/margin",
+  "what_we_expect": "step 2 - our base case, anchored to our specific growth/margin assumptions",
+  "fundamental_difference": "step 3 - the FUNDAMENTAL business reason the two differ (competition, mix, capital intensity, TAM) — not just 'we are more conservative'",
+  "financial_impact": "step 4 - what that fundamental difference does to revenue/margins/FCF over the forecast, with figures",
+  "valuation_impact": "step 5 - what that does to fair value versus the price (the size of the gap and why)",
+  "the_gap": "one-sentence summary of the gap",
   "thesis_points": ["3 to 5 short, specific reasons behind the recommendation"],
   "biggest_catalyst": "the single event most likely to move the stock, and its direction",
   "biggest_risk": "the single biggest risk to our view",
-  "bull_triggers": ["2-3 specific, measurable things that would make us more positive"],
-  "bear_triggers": ["2-3 specific, measurable things that would make us more negative"],
+  "bull_triggers": ["2-3 FALSIFIABLE triggers, each tied to a SPECIFIC model assumption threshold above (e.g. 'revenue growth holds above our XX% year-1 assumption for two more quarters', 'operating margin stays above our XX% terminal assumption') — a reader must be able to check it against a number"],
+  "bear_triggers": ["2-3 FALSIFIABLE triggers tied to specific model assumption thresholds, same discipline"],
   "red_team": "the strongest argument AGAINST our own recommendation, stated fairly"
 }}
 
-The recommendation is {rating}. Make the thesis consistent with it and with the numbers above."""
+The recommendation is {rating}. Make the thesis consistent with it and with the numbers above. Every bull/bear trigger MUST reference a specific number from our assumptions so the thesis is falsifiable."""
 
 
 def _fallback(valuation, history) -> InvestmentThesis:
@@ -243,6 +253,9 @@ def generate_thesis(
         headline=_str("headline"),
         what_market_prices_in=_str("what_market_prices_in"),
         what_we_expect=_str("what_we_expect"),
+        fundamental_difference=_str("fundamental_difference"),
+        financial_impact=_str("financial_impact"),
+        valuation_impact=_str("valuation_impact"),
         the_gap=_str("the_gap"),
         thesis_points=_list("thesis_points"),
         biggest_catalyst=_str("biggest_catalyst"),

@@ -316,13 +316,23 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                 + (f' — {thesis["business_quality_note"]}' if thesis.get("business_quality_note") else ""),
                 styles["small"],
             ))
-        for key, lead in (
-            ("what_market_prices_in", "What the market prices in."),
-            ("what_we_expect", "What we expect."),
-            ("the_gap", "The gap."),
-        ):
+        # The causal chain: market -> us -> fundamental difference -> financial
+        # -> valuation -> recommendation. Falls back to the flat gap if the model
+        # did not produce the chain fields.
+        chain = [
+            ("what_market_prices_in", "1 · What the market prices in."),
+            ("what_we_expect", "2 · What we expect."),
+            ("fundamental_difference", "3 · Why they differ (fundamental)."),
+            ("financial_impact", "4 · Financial impact."),
+            ("valuation_impact", f"5 · Valuation impact -> {report.rating}."),
+        ]
+        rendered_chain = False
+        for key, lead in chain:
             if thesis.get(key):
                 story.append(Paragraph(f"<b>{lead}</b> {thesis[key]}", styles["body"]))
+                rendered_chain = True
+        if not rendered_chain and thesis.get("the_gap"):
+            story.append(Paragraph(f"<b>The gap.</b> {thesis['the_gap']}", styles["body"]))
         if thesis.get("thesis_points"):
             story.append(Paragraph(f"<b>Why {report.rating}</b>", styles["body"]))
             story.append(ListFlowable(
@@ -559,22 +569,26 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         if fw.get("watch_items"):
             story.append(Paragraph("WHAT TO WATCH", styles["h2"]))
             story.append(Paragraph(
-                "The metrics the valuation is most exposed to, with what our thesis expects each "
-                "to do — so a reader can tell when reality diverges from our view.",
+                "Each metric tests a specific assumption in our model — a falsifiability check on "
+                "our own thesis. It states what our assumption expects and the value or trend that "
+                "would push us more bullish or more bearish.",
                 styles["small"],
             ))
             story.append(Spacer(1, 4))
-            header = ["Metric", "Current", "Trend", "What we expect", "Why it matters"]
+            header = ["Metric (tests)", "Current", "Trend", "What we expect", "More bullish / bearish if"]
             rows = [[Paragraph(h, styles["cellb"]) for h in header]]
             for item in fw["watch_items"]:
+                metric = f"<b>{item.get('metric', '')}</b>"
+                if item.get("assumption"):
+                    metric += f'<br/><font size="6.5" color="#7c8794">tests: {item["assumption"]}</font>'
                 rows.append([
-                    Paragraph(f"<b>{item.get('metric', '')}</b>", styles["cell"]),
+                    Paragraph(metric, styles["cell"]),
                     Paragraph(item.get("current", ""), styles["cell"]),
                     Paragraph(item.get("trend", ""), styles["cell"]),
                     Paragraph(item.get("expected", ""), styles["cell"]),
-                    Paragraph(item.get("why", ""), styles["cell"]),
+                    Paragraph(item.get("bull_bear", ""), styles["cell"]),
                 ])
-            widths = [CONTENT_WIDTH * w for w in (0.18, 0.17, 0.12, 0.26, 0.27)]
+            widths = [CONTENT_WIDTH * w for w in (0.19, 0.15, 0.11, 0.25, 0.30)]
             table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
             table.setStyle(TableStyle([
                 ("BACKGROUND", (0, 0), (-1, 0), SURFACE_2),
@@ -661,6 +675,8 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                 story.append(Paragraph(
                     f"<b>{row['label']}.</b> {row['note']}", styles["small"]
                 ))
+        if pi.get("summary"):
+            story.append(Paragraph(f"<b>What's doing the work.</b> {pi['summary']}", styles["body"]))
         story.append(Paragraph(
             "Read together, these are what the price assumes if the market is right about "
             "everything else. A gap the company has never closed in its own history is the risk "
