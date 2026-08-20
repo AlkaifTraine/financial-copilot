@@ -224,7 +224,8 @@ The report's as-of date is {as_of}. Everything below is forward-looking from THA
 
 Produce two things.
 
-1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing (a concrete future date/month, after the as-of date), direction (Positive / Negative / Two-sided), metric (what it moves). When you name a fiscal quarter, pair it with the correct CALENDAR month — fiscal years are often offset from the calendar (a January fiscal year-end means Q1 ends ~April of the PRIOR calendar year to the fiscal-year name).
+1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing, direction (Positive / Negative / Two-sided), metric (what it moves).
+   For `timing`, give the CALENDAR month and year the event occurs (for an earnings release, the month it will be REPORTED), e.g. "February 2027". If you also cite a fiscal quarter, write it in full — "Q4 FY2027", never a run-together form like "Q42027" — and make the calendar month CONSISTENT with it. Fiscal years are often offset: a January fiscal year-end means Q1 ends ~April of the calendar year BEFORE the fiscal-year name (Q1 FY2027 ends ~April 2026, reports ~May 2026). Never let the fiscal label and the calendar month disagree.
 2. watch_items: 4-6 metrics to monitor, each tied to a SPECIFIC model assumption it tests. Each: metric, assumption (the model assumption it checks — quote our number), current (latest reading), trend (direction of travel), expected (what our assumption implies it should do), bull_bear (the value/trend that would make us more bullish, and the one that would make us more bearish).
 
 Return JSON:
