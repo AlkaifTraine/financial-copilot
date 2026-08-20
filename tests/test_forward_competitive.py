@@ -207,3 +207,31 @@ class TestFiscalTimingCorrection:
         from fincopilot.report.monitoring import Catalyst, correct_fiscal_timing
         cats = [Catalyst(event="e", timing="Q1 FY2027", direction="x", metric="y")]
         assert correct_fiscal_timing(cats, SimpleNamespace(years=[])) == 0
+
+
+class TestEarningsAnchoring:
+    def test_earnings_anchored_and_others_left_alone(self):
+        from datetime import date
+        from fincopilot.report.monitoring import Catalyst, anchor_earnings_catalysts
+        cats = [
+            Catalyst(event="Q4 Earnings Release", timing="January 2027", direction="Two-sided", metric="rev"),
+            Catalyst(event="Blackwell Launch", timing="Q1 2027 (April 2027)", direction="Positive", metric="rev"),
+        ]
+        assert anchor_earnings_catalysts(cats, [date(2026, 8, 27), date(2026, 11, 19)]) == 1
+        assert cats[0].timing == "August 27, 2026"          # earnings -> real date
+        assert cats[1].timing == "Q1 2027 (April 2027)"     # launch untouched
+
+    def test_multiple_earnings_get_successive_dates(self):
+        from datetime import date
+        from fincopilot.report.monitoring import Catalyst, anchor_earnings_catalysts
+        cats = [Catalyst(event="Q3 earnings", timing="x", direction="d", metric="m"),
+                Catalyst(event="Q4 earnings", timing="y", direction="d", metric="m")]
+        assert anchor_earnings_catalysts(cats, [date(2026, 8, 27), date(2026, 11, 19)]) == 2
+        assert cats[0].timing == "August 27, 2026"
+        assert cats[1].timing == "November 19, 2026"
+
+    def test_no_dates_leaves_timing_untouched(self):
+        from fincopilot.report.monitoring import Catalyst, anchor_earnings_catalysts
+        cats = [Catalyst(event="earnings", timing="sometime", direction="d", metric="m")]
+        assert anchor_earnings_catalysts(cats, []) == 0
+        assert cats[0].timing == "sometime"

@@ -261,6 +261,74 @@ def _fallback(history: FinancialHistory, valuation) -> ForwardView:
     return view
 
 
+_EARNINGS_RE = re.compile(r"\bearnings\b|quarterly results|results release|results call|\bEPS\b", re.I)
+
+
+def _as_of_date(as_of: str | None):
+    from datetime import date
+    try:
+        return date.fromisoformat((as_of or "")[:10])
+    except ValueError:
+        return None
+
+
+def _scheduled_earnings_dates(ticker: str, as_of: str | None) -> list:
+    """Real, future scheduled earnings dates from yfinance; [] if none/unavailable.
+
+    Earnings are the one catalyst with an authoritative published date, so we look
+    it up rather than trusting the model's fiscal arithmetic. Best-effort: any
+    failure (offline, missing calendar) returns [] and the model's timing stands.
+    """
+    from datetime import date
+    reference = _as_of_date(as_of)
+    if not ticker or reference is None:
+        return []
+    try:
+        import yfinance as yf
+        info = yf.Ticker(ticker)
+        found: set = set()
+        table = getattr(info, "earnings_dates", None)
+        if table is not None:
+            for stamp in list(table.index):
+                moment = stamp.date() if hasattr(stamp, "date") else stamp
+                if isinstance(moment, date):
+                    found.add(moment)
+        try:
+            for moment in (info.calendar or {}).get("Earnings Date") or []:
+                if isinstance(moment, date):
+                    found.add(moment)
+        except Exception:
+            pass
+        return sorted(moment for moment in found if moment > reference)
+    except Exception as exc:
+        log.info("earnings calendar unavailable for %s: %s", ticker, exc)
+        return []
+
+
+def anchor_earnings_catalysts(catalysts: list["Catalyst"], dates: list) -> int:
+    """Replace the model's guessed timing on earnings catalysts with real dates.
+
+    Earnings catalysts (in list order, which is chronological) are assigned the
+    successive real scheduled dates. Non-earnings catalysts — product launches,
+    regulatory rulings — have no lookup-able date and are left untouched. Returns
+    the number anchored.
+    """
+    if not dates:
+        return 0
+    upcoming = iter(dates)
+    anchored = 0
+    for catalyst in catalysts:
+        if not _EARNINGS_RE.search(f"{catalyst.event} {catalyst.timing}"):
+            continue
+        try:
+            moment = next(upcoming)
+        except StopIteration:
+            break
+        catalyst.timing = f"{_MONTH_NAMES[moment.month]} {moment.day}, {moment.year}"
+        anchored += 1
+    return anchored
+
+
 def generate_forward(
     company: Company,
     history: FinancialHistory,
@@ -273,6 +341,7 @@ def generate_forward(
     """Produce the catalysts and monitoring dashboard, grounded in the valuation."""
     if not use_model or valuation.dcf is None:
         view = _fallback(history, valuation)
+        anchor_earnings_catalysts(view.catalysts, _scheduled_earnings_dates(company.ticker, as_of))
         correct_fiscal_timing(view.catalysts, history)
         view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
         return view
@@ -321,13 +390,16 @@ def generate_forward(
 
     if not catalysts and not watch_items:
         view = _fallback(history, valuation)
+        anchor_earnings_catalysts(view.catalysts, _scheduled_earnings_dates(company.ticker, as_of))
         correct_fiscal_timing(view.catalysts, history)
         view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
         return view
 
-    # Fix fiscal-quarter labels that map to the wrong calendar year, THEN drop any
-    # event already past by the as-of date — correcting first means a mislabelled
-    # quarter is filtered on its true date, whatever the model returned.
+    # Anchor earnings catalysts to their REAL scheduled dates (authoritative), fix
+    # any remaining fiscal-quarter labels by arithmetic (fallback), THEN drop events
+    # already past the as-of date — so every catalyst is filtered on its true date.
+    if anchor_earnings_catalysts(catalysts, _scheduled_earnings_dates(company.ticker, as_of)):
+        log.info("anchored earnings catalyst(s) to real scheduled dates")
     if correct_fiscal_timing(catalysts, history):
         log.info("corrected fiscal-quarter timing on one or more catalysts")
     upcoming, passed = classify_catalysts(catalysts, as_of)
