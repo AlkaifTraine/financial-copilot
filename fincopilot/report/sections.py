@@ -116,6 +116,7 @@ Rules:
 - Use ONLY the numbered sources provided. No outside knowledge.
 - Cite inline as [n] after each factual claim.
 - Quote figures exactly, with their period.
+- Guidance discipline: state the PERIOD of every guidance figure — a named quarter, a full fiscal year, a calendar year, or multi-year. Many companies (NVIDIA included) guide only ONE QUARTER ahead; NEVER present a single-quarter guidance number as annual or full-year. If a figure's period is ambiguous in the source, say so rather than assuming it is annual.
 - Interpret, do not narrate. Never write a sentence that only restates a source without drawing a conclusion from it.
 - Do not repeat what other sections cover (you are told what they are). Stay in your lane.
 - Banned: "underscores", "highlights", "demonstrates", "reflects", "showcases", "well-positioned", "remains committed", and any sentence that could appear in the company's own press release.
@@ -125,6 +126,8 @@ _PROMPT = """Company: {company}
 Section: {title}
 
 Brief: {brief}
+
+{financial_facts}
 
 Other sections of this report (do NOT duplicate their content):
 {siblings}
@@ -186,6 +189,7 @@ def build_section(
     company_name: str,
     *,
     latest_fiscal_year: int | None = None,
+    financial_facts: str = "",
 ) -> Section:
     """Retrieve evidence for one section and write it."""
     section = Section(key=spec.key, title=spec.title)
@@ -209,6 +213,7 @@ def build_section(
             company=company_name,
             title=spec.title,
             brief=spec.brief,
+            financial_facts=financial_facts,
             siblings=_sibling_brief(spec),
             context=result.context_block,
         ),
@@ -245,15 +250,23 @@ def build_all(
     company_name: str,
     *,
     latest_fiscal_year: int | None = None,
+    financial_facts: str = "",
     progress=None,
 ) -> list[Section]:
-    """Generate every narrative section."""
+    """Generate every narrative section.
+
+    ``financial_facts`` is the canonical-figures block (see report/metrics.py):
+    handed to every section as the authoritative source for headline metrics, so
+    no section re-derives (and contradicts) a number that already has a canonical
+    value.
+    """
     sections: list[Section] = []
     for position, spec in enumerate(SPECS, start=1):
         if progress:
             progress("section", f"[{position}/{len(SPECS)}] {spec.title}")
         section = build_section(
-            spec, index, company_name, latest_fiscal_year=latest_fiscal_year
+            spec, index, company_name, latest_fiscal_year=latest_fiscal_year,
+            financial_facts=financial_facts,
         )
         if not section.is_empty:
             sections.append(section)

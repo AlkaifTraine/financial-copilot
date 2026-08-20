@@ -308,10 +308,13 @@ def build_report(
             report.forward = forward.to_dict()
 
     if include_narrative and index is not None:
+        from .metrics import canonical_block
+
         report.sections = section_builder.build_all(
             index,
             company.name,
             latest_fiscal_year=history.latest.fiscal_year if history.latest else None,
+            financial_facts=canonical_block(history, valuation),
             progress=progress,
         )
 
@@ -328,11 +331,17 @@ def build_report(
             f"filings, and should be verified against the company's own reports."
         )
 
-    # Final QA: citation grounding (#23) and internal consistency (#22). Runs
-    # last, over the fully assembled report, and only speaks when it finds a
-    # problem — surfaced in the limitations above rather than hidden.
+    # Final QA: citation grounding, internal consistency, and a canonical-metric
+    # check. Runs last, over the fully assembled report. Critical failures set the
+    # publication gate (report.blocked); softer findings surface in limitations.
+    from .metrics import canonical_metrics
     from .qa import run_qa
 
+    report.canonical_metrics = [
+        {"key": m.key, "label": m.label, "value": m.value,
+         "unit": m.unit, "period": m.period, "definition": m.definition}
+        for m in canonical_metrics(history, valuation)
+    ]
     run_qa(report)
 
     return report

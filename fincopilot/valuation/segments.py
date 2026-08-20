@@ -309,7 +309,15 @@ def _reconciliation_note(analysis: SegmentAnalysis) -> str:
                 f"Summed bottom-up, the segments imply a "
                 f"{analysis.bottom_up_cagr * 100:.0f}% total CAGR — {abs(diff) * 100:.0f}pp "
                 f"{direction} the {analysis.top_down_cagr * 100:.0f}% our top-down DCF assumes. "
-                f"That gap is where the growth debate on this name actually sits."
+                f"Reconciliation: the gap is MIX. The bottom-up build lets each segment compound "
+                f"on its own trajectory, so a faster-growing segment gaining revenue share lifts "
+                f"the blended rate; the top-down forecast applies a single decay to the whole "
+                f"company and under-weights that shift. The headline valuation is driven by the "
+                f"TOP-DOWN path — the more conservative of the two, and the one built on audited "
+                f"revenue totals rather than model-extracted segment figures. The bottom-up is a "
+                f"cross-check, not the driver: it flags that our forecast is likely conservative "
+                f"if the current segment mix persists, and its "
+                f"{analysis.bottom_up_cagr * 100:.0f}% rate is effectively the bull case for growth."
             )
 
     return " ".join(parts)

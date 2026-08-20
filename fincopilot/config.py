@@ -282,8 +282,19 @@ WACC_BOUNDS = (0.05, 0.20)              # sanity rails on the discount rate
 # BELOW the recent range when it can justify it. Two rails only: a floor (a
 # fraction of today's margin) stops an unjustified collapse, and a ceiling (the
 # company's own demonstrated peak) stops a margin no evidence supports.
-TERMINAL_MARGIN_FLOOR_FRACTION = 0.60   # floor = 60% of the current operating margin
+TERMINAL_MARGIN_FLOOR_FRACTION = 0.60   # (deprecated) old mechanical floor
 TERMINAL_MARGIN_ABSOLUTE_FLOOR = 0.05
+# The terminal operating margin is an ECONOMIC judgement and is no longer clamped
+# to the historical range — a mechanical bound was forcing an economically derived
+# 40% back up to 48% on NVDA, exactly the methodological error we set out to
+# remove. Only physical sanity rails apply now: an operating margin cannot be
+# negative, and one above ~90% of revenue is not a business a DCF can carry. A
+# material departure from the current margin is EXPLAINED (competitive
+# normalisation, mix, scale), not overridden.
+TERMINAL_MARGIN_SANITY_CEILING = 0.90
+# How far the terminal margin must sit from today's before the report explains
+# the departure rather than treating it as "near current".
+TERMINAL_MARGIN_MATERIAL_DEVIATION = 0.10   # 10 percentage points
 
 # Blume beta adjustment: beta_used = w * beta_raw + (1 - w) * 1.0.
 #

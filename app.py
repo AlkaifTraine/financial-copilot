@@ -713,6 +713,16 @@ with report_tab:
             )
 
     report = st.session_state["report"]
+    if report and getattr(report, "blocked", False):
+        st.error(
+            "**Publication blocked by automated QA.** The report was generated but failed "
+            "an integrity check, so it is not offered for download. Regenerate to retry — "
+            "the underlying data may need a moment, or a source citation was missing."
+        )
+        for issue in report.blocking_issues:
+            st.markdown(f"- {issue}")
+        report = None   # withhold the download/preview for a failed report
+
     if report:
         config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         stem = config.REPORTS_DIR / f"{company.slug}_equity_research"

@@ -240,8 +240,8 @@ def build_scenarios(
     spread_note = (
         f"Growth spread +/-{growth_spread * 100:.0f}pp ({growth_basis}); "
         f"margin spread +/-{margin_spread * 100:.0f}pp ({margin_basis}); "
-        f"discount rate +/-{wacc_delta * 100:.0f}bps; "
-        f"terminal growth +/-{tg_delta * 100:.0f}bps."
+        f"discount rate +/-{wacc_delta * 10000:.0f}bps; "
+        f"terminal growth +/-{tg_delta * 10000:.0f}bps."
     )
 
     specs = [

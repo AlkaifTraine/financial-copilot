@@ -110,3 +110,36 @@ class TestRunQa:
         assert issues
         assert len(report.warnings) == before + len(issues)
         assert all(w.startswith("Automated QA flagged:") for w in report.warnings[before:])
+
+
+class TestMetricGate:
+    """The canonical-metric consistency scan and the publication gate."""
+
+    def _report(self, section_text: str, fcf: float = 96.7e9):
+        report = ReportModel(company_name="X", ticker="X", currency="USD")
+        report.canonical_metrics = [{
+            "key": "free_cash_flow", "label": "Free cash flow", "value": fcf,
+            "unit": "currency", "period": "FY2026",
+            "definition": "Operating cash flow minus capital expenditure, full fiscal year",
+        }]
+        report.sections = [Section(
+            key="financials", title="Financial Performance",
+            paragraphs=[section_text], evidence=_evidence(2),
+        )]
+        return report
+
+    def test_contradicting_fcf_blocks_publication(self):
+        report = self._report("Free cash flow was $34.9 billion [1] this year, a strong result [2].")
+        run_qa(report)
+        assert report.blocked is True
+        assert any("free cash flow" in i.lower() for i in report.blocking_issues)
+
+    def test_matching_fcf_does_not_block(self):
+        report = self._report("Free cash flow reached $96.7 billion [1], a record [2].")
+        run_qa(report)
+        assert report.blocked is False
+
+    def test_quarterly_labelled_figure_is_not_a_contradiction(self):
+        report = self._report("Q1 free cash flow was $27.0 billion [1], up sequentially [2].")
+        run_qa(report)
+        assert report.blocked is False

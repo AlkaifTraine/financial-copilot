@@ -703,7 +703,9 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             "Three coherent states of the world. Unlike the sensitivity grid, each "
             "scenario moves growth, margin, terminal growth and the discount rate "
             "<b>together</b>. The bear-to-bull spread is sized from this company's own "
-            "historical volatility, not a fixed percentage.",
+            "historical volatility, not a fixed percentage. The probabilities are "
+            "<b>analyst-assigned</b> (a deliberately conservative 25/50/25 prior), not "
+            "statistically estimated.",
             styles["small"],
         ))
         story.append(Spacer(1, 4))

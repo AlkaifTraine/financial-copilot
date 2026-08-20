@@ -138,6 +138,7 @@ Non-negotiable rules:
 - Separate BUSINESS QUALITY (how good the company is) from STOCK ATTRACTIVENESS (whether to own it at this price). A great business can be a SELL if the price is too high. Never conflate the two.
 - Reason from the numbers you are given. The recommendation follows the valuation — do not argue toward a predetermined answer.
 - Be specific and quantitative. Tie every claim to a figure or a named fact.
+- Guidance discipline: every guidance figure must carry its period (a named quarter, a full fiscal year, a calendar year, or multi-year). Many companies (NVIDIA included) guide only ONE QUARTER ahead — never present single-quarter guidance as annual/full-year.
 - Frame the thesis as: what the market is pricing in vs what we expect vs why the gap matters.
 - No filler, no cheerleading, no "this underscores/highlights/demonstrates". Write like an analyst, not a summariser."""
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from fincopilot.fundamentals.models import FinancialHistory, FiscalYear
-from fincopilot.valuation.assumptions import _margin_floor_fraction
 from fincopilot.valuation.models import AssumptionLedger
 from fincopilot.valuation.wacc import _size_premium, compute_wacc
 
@@ -77,23 +76,6 @@ class TestHorizonBeta:
         wacc = compute_wacc(_history(market_cap=3e12, beta=2.2), _company(), led)
         # A raw 2.2 beta must not still produce a ~15% rate after horizon + size.
         assert wacc < 0.13
-
-
-class TestMarginFloorFraction:
-    def test_steady_margins_keep_most_of_the_margin(self):
-        frac, label = _margin_floor_fraction([0.54, 0.62, 0.62])
-        assert frac == 0.80
-        assert label == "steady"
-
-    def test_volatile_margins_allow_deep_normalisation(self):
-        frac, label = _margin_floor_fraction([0.16, 0.54, 0.62])
-        assert frac == 0.55
-        assert label == "volatile"
-
-    def test_moderately_steady_in_between(self):
-        # mean 0.30, cv ~0.27 → moderate band.
-        frac, _ = _margin_floor_fraction([0.20, 0.30, 0.40])
-        assert frac == 0.68
 
 
 class _Company:

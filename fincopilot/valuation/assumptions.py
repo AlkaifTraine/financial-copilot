@@ -121,33 +121,6 @@ def _growth_is_steady(growth_history: list[tuple[int, float]]) -> bool:
     return mean > 0 and statistics.pstdev(recent) / mean < 0.5
 
 
-def _margin_floor_fraction(margins: list[float]) -> tuple[float, str]:
-    """How much of today's margin the forecast must retain, from its durability.
-
-    A blanket "the terminal margin may fall to 60% of today's" is wrong in both
-    directions. A business that has held a steady margin has demonstrated pricing
-    power the forecast should not assume away — its floor should sit near today's
-    level. One whose margin swings has shown it cannot defend the level, so a
-    deeper normalisation is justified. Measured over the recent regime (the same
-    three-year window the margin mean uses), via the coefficient of variation, so
-    the judgement comes from the company's own record rather than a fixed guess.
-    """
-    recent = margins[-3:]
-    if len(recent) >= 2:
-        import statistics
-
-        mean_recent = statistics.fmean(recent)
-        cv = statistics.pstdev(recent) / mean_recent if mean_recent > 0 else 1.0
-    else:
-        cv = 1.0
-
-    if cv <= 0.15:
-        return 0.80, "steady"
-    if cv <= 0.35:
-        return 0.68, "moderately steady"
-    return 0.55, "volatile"
-
-
 _REFINE_PROMPT = """You are setting the forward assumptions for a discounted cash flow valuation of {company}.
 
 Historical results (from its own filings):
@@ -159,7 +132,7 @@ Management commentary and outlook retrieved from the filings:
 Propose three forward assumptions. Ground each in the history and the commentary above; do not invent figures.
 
 1. year_one_revenue_growth - revenue growth for the next fiscal year (decimal, e.g. 0.35)
-2. terminal_operating_margin - the operating margin this business sustains at MATURITY, ~10 years out (decimal). Reason it from economics, not just recent history: competitive intensity, pricing power, product mix, scale limits, and likely normalisation. A company at a peak margin today may well settle below it. Justify the level you choose.
+2. terminal_operating_margin - the operating margin this business sustains at MATURITY, ~10 years out (decimal). Derive it ECONOMICALLY, not from recent history, weighing: normalized competitive economics, product/segment mix, pricing power, scale economies, competitive intensity and likely new entrants, industry structure, and long-run capital intensity — checked against, but NOT bound to, historical evidence. A company at a peak margin today may well settle below it; a scaling one may rise. If your estimate differs materially from the current/historical margin, that is allowed — say plainly WHY in the rationale. Do not anchor to the historical range.
 3. terminal_growth_rate - perpetual growth after the forecast period (decimal, between 0.01 and 0.04; must be below long-run GDP growth)
 
 For each, give a one-sentence rationale citing something specific from the data or commentary.
@@ -407,21 +380,21 @@ def derive_inputs(
     )
 
     # -- terminal margin --------------------------------------------------
-    # The mature-state margin is reasoned economically, not forced into the
-    # recent range. A company at a peak margin can plausibly normalise DOWN over
-    # a decade as competition and mix shift, so the band deliberately allows the
-    # terminal margin below the recent regime. Only two rails apply: a floor at
-    # a fraction of today's margin (an unjustified collapse is still rejected)
-    # and a ceiling at the company's own demonstrated peak (a margin the
-    # business has never posted is a claim a DCF cannot carry).
+    # The mature-state margin is an ECONOMIC judgement — reasoned from competitive
+    # structure, mix, pricing power, scale and long-run capital intensity — and is
+    # NOT clamped back to the historical range. An earlier version floored it at a
+    # fraction of the current margin, which forced an economically derived 40% up
+    # to 48% on NVDA; that mechanical constraint is exactly what we set out to
+    # remove. Only physical sanity rails apply now (a margin below zero or above
+    # ~90% of revenue is not a business a DCF can carry). Where the estimate
+    # departs materially from today's margin, the derivation EXPLAINS the
+    # departure rather than overriding it.
     current_margin_now = margins[-1] if margins else mean_margin
     peak_margin = max(margins) if margins else 0.40
-    floor_fraction, durability = _margin_floor_fraction(margins)
-    margin_floor = max(
+    margin_bounds = (
         config.TERMINAL_MARGIN_ABSOLUTE_FLOOR,
-        current_margin_now * floor_fraction,
+        config.TERMINAL_MARGIN_SANITY_CEILING,
     )
-    margin_bounds = (margin_floor, peak_margin)
     proposed_margin, margin_rationale = _model_value(proposal, "terminal_operating_margin")
 
     if proposed_margin is None:
@@ -433,15 +406,25 @@ def derive_inputs(
     else:
         terminal_margin, margin_clamped = _clamp(proposed_margin, margin_bounds)
         margin_source = SOURCE_MODEL
-        if terminal_margin < current_margin_now:
-            shape = f"normalised down from today's {current_margin_now * 100:.1f}%"
+        deviation = terminal_margin - current_margin_now
+        if abs(deviation) >= config.TERMINAL_MARGIN_MATERIAL_DEVIATION:
+            direction = "below" if deviation < 0 else "above"
+            above_peak = (
+                " — above any level the company has posted"
+                if terminal_margin > peak_margin + 1e-9 else ""
+            )
+            shape = (
+                f"a mature margin {abs(deviation) * 100:.0f}pp {direction} today's "
+                f"{current_margin_now * 100:.0f}%{above_peak}, an economic normalisation "
+                f"the rationale explains"
+            )
         else:
-            shape = f"held near today's {current_margin_now * 100:.1f}%"
+            shape = f"a mature margin near today's {current_margin_now * 100:.0f}%"
         margin_derivation = (
-            f"Model estimate {proposed_margin * 100:.1f}%, {shape}; kept within a "
-            f"maturity band of [{margin_bounds[0] * 100:.1f}%, {margin_bounds[1] * 100:.1f}%] "
-            f"(floor {floor_fraction * 100:.0f}% of current, set by {durability} margins; "
-            f"ceiling the demonstrated peak)"
+            f"Economically derived terminal margin of {terminal_margin * 100:.1f}% — {shape}. "
+            f"Reasoned from competitive economics, mix, pricing power, scale and industry "
+            f"structure; not clamped to the historical range (physical sanity rails only, "
+            f"[{margin_bounds[0] * 100:.0f}%, {margin_bounds[1] * 100:.0f}%])."
         )
         raw_margin = proposed_margin if margin_clamped else None
 

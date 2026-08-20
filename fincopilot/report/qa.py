@@ -104,10 +104,115 @@ def check_consistency(report) -> list[str]:
     return issues
 
 
+_UNIT = {"tn": 1e12, "trillion": 1e12, "bn": 1e9, "billion": 1e9, "b": 1e9,
+         "m": 1e6, "million": 1e6}
+# A scaled money figure, as a reusable sub-pattern (value, unit).
+_MONEY_SUB = r"(?:\$|usd|us\$)?\s*([0-9]+(?:\.[0-9]+)?)\s*(tn|trillion|bn|billion|b|million|m)\b"
+# Connective words that bind a figure to a metric as its VALUE, so we only test a
+# number the prose actually presents AS the metric — not an incidental figure
+# (a buyback, a dividend) that merely sits near the metric's name.
+_BIND = r"(?:of|was|were|at|reached|totall?ed|hit|stood at|came in at|:|=)"
+_FILLER = r"(?:\s+(?:a|an|the|about|roughly|approximately|record|around|nearly|~))*"
+# A figure carrying any of these is a DIFFERENT period or a projection, not a
+# restatement of the canonical full-year actual — so it is not a contradiction.
+# (The quarterly-vs-annual discipline is enforced separately, in the prompts.)
+_OTHER_PERIOD = re.compile(
+    r"q[1-4]\b|quarter|three months|sequential|per quarter|"          # quarterly
+    r"expect|project|forecast|guidanc|estimat|target|assum|imply|implie|"  # forward / modelled
+    r"next (?:year|quarter|fiscal)|by 20\d\d|fy\s?20(?:2[7-9]|[3-9]\d)|"   # future periods
+    r"could|would|we see|potential|forward|over the (?:forecast|next)",
+    re.I,
+)
+
+# Metrics most prone to a quarterly/annual or GAAP/non-GAAP mix-up in prose.
+_SCANNED = {
+    "free_cash_flow": ("free cash flow", "fcf"),
+    "net_income": ("net income",),
+    "revenue": ("full-year revenue", "full year revenue", "annual revenue", "total revenue"),
+}
+
+
+def _bound_figures(text: str, keyword: str) -> list[tuple[float, str]]:
+    """(value, context) for figures the prose presents AS this metric's value.
+
+    Only two grammatical shapes count — "<metric> of/was/reached $X" and
+    "$X in/of <metric>" — so an incidental number near the metric's name (a
+    dividend beside "net income", a segment figure beside "revenue") is not
+    mistaken for a restatement of the metric.
+    """
+    kw = re.escape(keyword)
+    patterns = [
+        rf"{kw}\s+{_BIND}{_FILLER}\s*{_MONEY_SUB}",     # metric of/was $X
+        rf"{_MONEY_SUB}\s+(?:in|of)\s+(?:{kw})",         # $X in/of metric
+    ]
+    found: list[tuple[float, str]] = []
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            value = float(match.group(1)) * _UNIT[match.group(2).lower()]
+            # Widen the context so a "we expect"/"in Q1" qualifier earlier in the
+            # sentence is visible to the different-period check.
+            context = text[max(0, match.start() - 80): match.end() + 10]
+            found.append((value, context))
+    return found
+
+
+def check_metric_consistency(report) -> list[str]:
+    """Flag section prose that states a headline figure conflicting with its canonical value.
+
+    A safety net behind the canonical-figures injection: if a section still states,
+    say, a free cash flow materially different from the authoritative full-year
+    value — and does not label it as a quarter — that is the contradiction the
+    report cannot ship with.
+    """
+    issues: list[str] = []
+    canonical = {m["key"]: m for m in report.canonical_metrics if m.get("unit") == "currency"}
+    currency = report.currency
+
+    for key, keywords in _SCANNED.items():
+        metric = canonical.get(key)
+        if not metric or not metric.get("value"):
+            continue
+        value = metric["value"]
+        for section in report.sections:
+            text = " ".join(
+                [section.summary, *section.paragraphs, *section.bullets, section.implication]
+            )
+            for keyword in keywords:
+                for figure, context in _bound_figures(text, keyword):
+                    if _OTHER_PERIOD.search(context):
+                        continue                      # a quarterly or forward figure is a different metric
+                    if value > 0 and abs(figure - value) / value > 0.40:
+                        issues.append(
+                            f'The "{section.title}" section states {metric["label"].lower()} of '
+                            f'~{currency} {figure / 1e9:,.1f}bn, but the canonical '
+                            f'{metric["label"]} ({metric["period"]}) is {currency} '
+                            f'{value / 1e9:,.1f}bn ({metric["definition"]}).'
+                        )
+                        break                         # one flag per section/metric is enough
+    return issues
+
+
 def run_qa(report) -> list[str]:
-    """Run both passes and surface any findings in the report's limitations."""
-    issues = audit_citations(report) + check_consistency(report)
-    for issue in issues:
+    """Run every QA pass; classify findings; set the publication gate.
+
+    Critical failures — a dead or missing citation on a claim-heavy section, or a
+    section figure that contradicts a canonical metric — block publication. Softer
+    findings are surfaced in the report's limitations. All findings, blocking or
+    not, are also listed under limitations so nothing is hidden.
+    """
+    citation = audit_citations(report)
+    consistency = check_consistency(report)
+    metric = check_metric_consistency(report)
+
+    # A numeric contradiction (a figure disagreeing with itself, or with a
+    # canonical value) is never acceptable in a published research report; a
+    # citation failure on a claim-heavy section is a grounding failure. Both block.
+    blocking = citation + consistency + metric
+
+    for issue in blocking:
         log.info("QA: %s", issue)
         report.warnings.append(f"Automated QA flagged: {issue}")
-    return issues
+
+    report.blocking_issues = blocking
+    report.blocked = bool(blocking)
+    return blocking
