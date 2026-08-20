@@ -129,6 +129,7 @@ def value_company(
     # so it stays inside the guardrails. The probe build is thrown away; only the
     # final assumption set is recorded in the ledger.
     proposal_override = None
+    probe_ledger = None
     if use_model:
         try:
             probe_ledger = AssumptionLedger()
@@ -163,6 +164,16 @@ def value_company(
             "A second-pass calibration review revised one or more forward assumptions "
             "(see the assumption rationales below); the fair value reflects the revised set."
         )
+        # The agent revised the VALUES; its override carries no evidence chain. Keep
+        # the provenance the base proposal established (the historical/guidance/
+        # industry/competitive/management evidence is about the company, not the
+        # specific number), so model estimates still expose where they came from.
+        if probe_ledger is not None:
+            for key in ("year_one_growth", "terminal_margin", "terminal_growth"):
+                final_a = ledger.get(key)
+                base_a = probe_ledger.get(key)
+                if final_a is not None and base_a is not None and not final_a.provenance:
+                    final_a.provenance = base_a.provenance
 
     # -- the model --------------------------------------------------------
     try:
