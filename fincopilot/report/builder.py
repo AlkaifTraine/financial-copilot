@@ -302,7 +302,8 @@ def build_report(
             top_k=8,
         ).context_block
         forward = generate_forward(
-            company, history, valuation, qualitative_context=forward_context
+            company, history, valuation,
+            qualitative_context=forward_context, as_of=report.as_of,
         )
         if forward.catalysts or forward.watch_items:
             report.forward = forward.to_dict()

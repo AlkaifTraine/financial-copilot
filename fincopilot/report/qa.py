@@ -192,6 +192,99 @@ def check_metric_consistency(report) -> list[str]:
     return issues
 
 
+_DECREASE = re.compile(
+    r"reduc|lower|cut|declin|fall|drop|compress|shrink|erod|weaken|pressur|slow|"
+    r"deteriorat|hurt|dent|impair|soften|contract",
+    re.I,
+)
+_INCREASE = re.compile(
+    r"rais|increas|lift|boost|expand|improv|accelerat|strengthen|widen", re.I,
+)
+_FROM_TO = re.compile(
+    r"from\s+(?:our\s+|the\s+)?(\d+(?:\.\d+)?)\s*%"      # from A%
+    r"[^.]{0,50}?\b(?:to|toward|towards)\s+"              # to / toward
+    r"(?:the\s+|a\s+|market[- ]implied\s+)?(?:[^.\d]{0,25}?)(\d+(?:\.\d+)?)\s*%",  # B%
+    re.I,
+)
+_LIFT_FV = re.compile(
+    r"(?:rais|increas|lift|boost|improv|higher|expand)\w*\s+(?:our\s+|the\s+)?"
+    r"(?:fair value|target price|intrinsic value|valuation)",
+    re.I,
+)
+
+_QUARTERLY_WORD = re.compile(
+    r"\b(quarterly|qoq|quarter[- ]over[- ]quarter|sequential|per quarter)\b", re.I
+)
+_ANNUAL_WORD = re.compile(
+    r"\b(annual|full[- ]year|fiscal year|fy\s?20\d\d|yoy|year[- ]over[- ]year|"
+    r"per year|10[- ]year|cagr)\b",
+    re.I,
+)
+
+
+def check_risk_direction(report) -> list[str]:
+    """Flag risks whose stated effect points the wrong way.
+
+    A risk is a downside: it must push the affected metric — and fair value — DOWN.
+    The failure this catches is real: "a supply-chain event could reduce revenue
+    CAGR from our 13.3% base toward market-implied 25.3%" — a decrease described as
+    moving the metric ABOVE the base, which is directionally impossible.
+    """
+    issues: list[str] = []
+    for risk in (report.risks or []):
+        name = risk.get("risk", "this")
+        text = f"{risk.get('financial_impact', '')} {risk.get('valuation_impact', '')}"
+
+        for match in _FROM_TO.finditer(text):
+            a, b = float(match.group(1)), float(match.group(2))
+            window = text[max(0, match.start() - 60): match.end()]
+            decreasing = _DECREASE.search(window)
+            increasing = _INCREASE.search(window)
+            if decreasing and b > a + 0.05:
+                issues.append(
+                    f'The "{name}" risk (a downside) describes {decreasing.group(0).lower()}ing '
+                    f'a metric from {a:g}% toward {b:g}% — but {b:g}% is ABOVE {a:g}%, so the '
+                    f'negative event is written as IMPROVING the metric. Directional contradiction.'
+                )
+            elif increasing and b < a - 0.05:
+                issues.append(
+                    f'The "{name}" risk describes {increasing.group(0).lower()}ing a metric from '
+                    f'{a:g}% to {b:g}% — a rise stated as a fall. Directional contradiction.'
+                )
+
+        if _LIFT_FV.search(text):
+            issues.append(
+                f'The "{name}" risk describes RAISING fair value, but a risk is a downside — the '
+                f'valuation impact points the wrong way.'
+            )
+    return issues
+
+
+def check_metric_semantics(report) -> list[str]:
+    """Flag a metric whose period/comparison label conflicts with its own reading.
+
+    Catches "Quarterly revenue growth rate" carrying a full-year YoY figure — a
+    quarterly label on an annual number is a different metric wearing the wrong name.
+    """
+    issues: list[str] = []
+    forward = report.forward or {}
+    for item in forward.get("watch_items", []):
+        label = item.get("metric", "")
+        if not _QUARTERLY_WORD.search(label):
+            continue
+        context = " ".join(
+            [item.get("current", ""), item.get("expected", ""), item.get("assumption", "")]
+        )
+        annual = _ANNUAL_WORD.search(context)
+        if annual:
+            issues.append(
+                f'The watch metric "{label}" is labelled quarterly, but its reading/assumption is '
+                f'{annual.group(0).lower()} ("{context.strip()[:90]}") — a period/comparison '
+                f'mismatch: a quarterly label on an annual metric.'
+            )
+    return issues
+
+
 def run_qa(report) -> list[str]:
     """Run every QA pass; classify findings; set the publication gate.
 
@@ -203,11 +296,15 @@ def run_qa(report) -> list[str]:
     citation = audit_citations(report)
     consistency = check_consistency(report)
     metric = check_metric_consistency(report)
+    direction = check_risk_direction(report)
+    semantics = check_metric_semantics(report)
 
-    # A numeric contradiction (a figure disagreeing with itself, or with a
-    # canonical value) is never acceptable in a published research report; a
-    # citation failure on a claim-heavy section is a grounding failure. Both block.
-    blocking = citation + consistency + metric
+    # A numeric contradiction (a figure disagreeing with itself or with a canonical
+    # value), a citation failure on a claim-heavy section, a directional impossibility
+    # (a downside risk that improves its metric), or a period/comparison mismatch (a
+    # quarterly label on an annual figure) are each disqualifying in a research
+    # report. All block publication.
+    blocking = citation + consistency + metric + direction + semantics
 
     for issue in blocking:
         log.info("QA: %s", issue)

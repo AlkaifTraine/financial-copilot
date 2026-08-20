@@ -127,6 +127,7 @@ _SYSTEM = """You are a buy-side equity analyst writing the risk section of a res
 Rules:
 - Each risk must be MATERIAL to the investment case and SPECIFIC to this company. Never list generic risks ("macroeconomic conditions", "competition") without saying concretely how they hit THIS business.
 - Quantify. Size the financial impact against the segment or revenue it threatens. Anchor the valuation impact to a number already in the analysis — the bear-case fair value, the downside to our intrinsic value, or the reverse-DCF gap the price is leaning on.
+- DIRECTION MUST BE CONSISTENT. A risk is a DOWNSIDE: reason it as risk -> operational impact -> financial metric -> forecast -> valuation, and every link must point the SAME way. A negative event LOWERS the affected metric and LOWERS fair value. Never write that a risk moves a metric UP or "toward" a HIGHER figure — e.g. do NOT say a risk reduces revenue growth "toward" the market-implied rate, which is ABOVE our base case. The downside target is always BELOW our base case, never above it.
 - The early-warning indicator must be a single, observable metric a reader could actually watch each quarter — not "monitor the situation".
 - Order by materiality, most damaging first. Prefer 4-6 risks over a long thin list.
 - No filler, no hedging, no restating the risk in the impact field."""

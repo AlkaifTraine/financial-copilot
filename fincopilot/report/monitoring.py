@@ -16,6 +16,7 @@ actually move the valuation, not a generic KPI list.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 
 from ..fundamentals import FinancialHistory
@@ -23,6 +24,47 @@ from ..llm import complete_json
 from ..resolve import Company
 
 log = logging.getLogger(__name__)
+
+_MONTH3 = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+           "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+
+
+def _year_month(text: str) -> tuple[int, int] | None:
+    """Best-effort (year, month) parsed from a date or timing string; None if unclear."""
+    if not text:
+        return None
+    iso = re.search(r"(20\d{2})-(\d{2})", text)
+    if iso:
+        return int(iso.group(1)), int(iso.group(2))
+    named = re.search(
+        r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(20\d{2})",
+        text, re.I,
+    )
+    if named:
+        return int(named.group(2)), _MONTH3[named.group(1)[:3].lower()]
+    return None
+
+
+def classify_catalysts(catalysts: list["Catalyst"], as_of: str | None):
+    """Split catalysts into (upcoming, passed) by the report's as-of month.
+
+    A catalyst whose parseable date is strictly before the as-of month has already
+    happened and must not appear in an "upcoming" section. Events whose timing
+    cannot be parsed to a month are kept as upcoming (the prompt is told the date,
+    so this is a backstop, not the primary guard).
+    """
+    reference = _year_month(as_of or "")
+    if reference is None:
+        return catalysts, []
+    upcoming, passed = [], []
+    for catalyst in catalysts:
+        moment = _year_month(catalyst.timing)
+        if moment is not None and moment < reference:
+            catalyst.status = "passed"
+            passed.append(catalyst)
+        else:
+            upcoming.append(catalyst)
+    return upcoming, passed
 
 
 @dataclass
@@ -33,6 +75,7 @@ class Catalyst:
     timing: str                  # e.g. "Q4 FY2026 earnings, ~Feb 2026"
     direction: str               # Positive / Negative / Two-sided
     metric: str                  # the figure it would move
+    status: str = "upcoming"     # "upcoming" or "passed" (set by classify_catalysts)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -110,6 +153,7 @@ Rules:
 - Guidance discipline: any guidance figure must carry its period (a named quarter, a full fiscal year, a calendar year, or multi-year). Many companies (NVIDIA included) guide only ONE QUARTER ahead — never present single-quarter guidance as annual/full-year.
 - The monitoring dashboard tracks the few metrics the VALUATION is most exposed to — the levers the price is leaning on — not a generic KPI dump.
 - Every watch item MUST map to a specific model ASSUMPTION it tests (e.g. our year-1 growth, our terminal margin, our WACC), and state the value/trend that would make us more BULLISH or more BEARISH — so the dashboard is a falsifiability check on our own thesis, not a KPI list.
+- PERIOD/COMPARISON MUST MATCH. A metric's label must state its true period and comparison and match its reading: do not label an annual, year-over-year figure "quarterly" or "sequential", and do not pair a quarterly label with a full-year number. If our assumption is an annual YoY growth rate, the metric is "revenue growth (YoY)", never "quarterly revenue growth".
 - Specific and quantitative. Tie each item to a figure where the data allows."""
 
 _PROMPT = """Company: {company}
@@ -120,9 +164,11 @@ Our computed valuation:
 Filings context (guidance, product roadmap, upcoming events):
 {context}
 
+The report's as-of date is {as_of}. Everything below is forward-looking from THAT date.
+
 Produce two things.
 
-1. catalysts: 3-5 upcoming events that could move the stock. Each: event, timing (be concrete about when), direction (Positive / Negative / Two-sided), metric (what it moves).
+1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing (a concrete future date/month, after the as-of date), direction (Positive / Negative / Two-sided), metric (what it moves).
 2. watch_items: 4-6 metrics to monitor, each tied to a SPECIFIC model assumption it tests. Each: metric, assumption (the model assumption it checks — quote our number), current (latest reading), trend (direction of travel), expected (what our assumption implies it should do), bull_bear (the value/trend that would make us more bullish, and the one that would make us more bearish).
 
 Return JSON:
@@ -164,17 +210,21 @@ def generate_forward(
     valuation,
     *,
     qualitative_context: str = "",
+    as_of: str | None = None,
     use_model: bool = True,
 ) -> ForwardView:
     """Produce the catalysts and monitoring dashboard, grounded in the valuation."""
     if not use_model or valuation.dcf is None:
-        return _fallback(history, valuation)
+        view = _fallback(history, valuation)
+        view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
+        return view
 
     payload = complete_json(
         _PROMPT.format(
             company=f"{company.name} ({company.ticker})",
             facts=_facts(history, valuation),
             context=(qualitative_context or "None retrieved.")[:4000],
+            as_of=as_of or "the report date",
         ),
         system=_SYSTEM,
         temperature=0.2,
@@ -212,6 +262,13 @@ def generate_forward(
     ]
 
     if not catalysts and not watch_items:
-        return _fallback(history, valuation)
+        view = _fallback(history, valuation)
+        view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
+        return view
 
-    return ForwardView(catalysts=catalysts, watch_items=watch_items, generated=True)
+    # Deterministic backstop: drop any event that has already happened by the
+    # as-of date, whatever the model returned. A past event can never be a catalyst.
+    upcoming, passed = classify_catalysts(catalysts, as_of)
+    if passed:
+        log.info("dropped %d past-dated catalyst(s) before %s", len(passed), as_of)
+    return ForwardView(catalysts=upcoming, watch_items=watch_items, generated=True)

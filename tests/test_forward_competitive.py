@@ -138,3 +138,21 @@ class TestCompetitiveModelPath:
     def test_garbage_falls_back(self, monkeypatch):
         monkeypatch.setattr(competitive_mod, "complete_json", lambda *a, **k: 123)
         assert generate_competitive(_Company(), _History(), _valuation()).generated is False
+
+
+class TestTemporalClassification:
+    def test_past_dated_catalyst_is_dropped_from_upcoming(self):
+        from fincopilot.report.monitoring import Catalyst, classify_catalysts
+        cats = [
+            Catalyst(event="Q1 FY2027 earnings", timing="~May 2026", direction="Two-sided", metric="rev"),
+            Catalyst(event="Q3 earnings", timing="Nov 2026", direction="Two-sided", metric="rev"),
+        ]
+        upcoming, passed = classify_catalysts(cats, "2026-08-20")
+        assert [c.event for c in upcoming] == ["Q3 earnings"]
+        assert len(passed) == 1 and passed[0].status == "passed"
+
+    def test_unparseable_timing_is_kept(self):
+        from fincopilot.report.monitoring import Catalyst, classify_catalysts
+        cats = [Catalyst(event="Next earnings", timing="Next earnings date", direction="Two-sided", metric="rev")]
+        upcoming, passed = classify_catalysts(cats, "2026-08-20")
+        assert len(upcoming) == 1 and not passed

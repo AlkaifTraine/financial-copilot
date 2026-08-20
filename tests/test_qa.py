@@ -143,3 +143,59 @@ class TestMetricGate:
         report = self._report("Q1 free cash flow was $27.0 billion [1], up sequentially [2].")
         run_qa(report)
         assert report.blocked is False
+
+
+class TestRiskDirection:
+    """Directional QA: a downside risk cannot improve its own metric."""
+
+    def _report(self, financial_impact="", valuation_impact=""):
+        report = ReportModel(company_name="X", ticker="X", currency="USD")
+        report.risks = [{
+            "risk": "Supply chain", "financial_impact": financial_impact,
+            "valuation_impact": valuation_impact,
+        }]
+        return report
+
+    def test_reduce_toward_higher_value_blocks(self):
+        report = self._report(
+            financial_impact="A disruption could reduce revenue CAGR from our 13.3% base case "
+                             "toward market-implied 25.3%."
+        )
+        run_qa(report)
+        assert report.blocked is True
+        assert any("directional" in i.lower() for i in report.blocking_issues)
+
+    def test_clean_downside_does_not_block(self):
+        report = self._report(
+            financial_impact="A disruption could cut revenue CAGR from our 13.3% base toward 8.0%."
+        )
+        run_qa(report)
+        assert report.blocked is False
+
+    def test_risk_that_raises_fair_value_blocks(self):
+        report = self._report(valuation_impact="This would raise our fair value materially.")
+        run_qa(report)
+        assert any("wrong way" in i.lower() for i in report.blocking_issues)
+
+
+class TestMetricSemantics:
+    """Semantic QA: a metric's period label must match its reading."""
+
+    def _report(self, label, assumption=""):
+        report = ReportModel(company_name="X", ticker="X", currency="USD")
+        report.forward = {"watch_items": [{
+            "metric": label, "assumption": assumption, "current": "", "expected": "",
+            "trend": "", "bull_bear": "",
+        }]}
+        return report
+
+    def test_quarterly_label_on_annual_metric_blocks(self):
+        report = self._report("Quarterly revenue growth rate", assumption="Our 65% YoY FY2026 growth")
+        run_qa(report)
+        assert report.blocked is True
+        assert any("mismatch" in i.lower() for i in report.blocking_issues)
+
+    def test_matching_period_does_not_block(self):
+        report = self._report("Revenue growth (YoY)", assumption="Our 65% YoY growth")
+        run_qa(report)
+        assert report.blocked is False
