@@ -322,16 +322,19 @@ BETA_BLUME_WEIGHT = 0.67
 # range practitioners actually use for the name rather than 14.5%.
 BETA_HORIZON_WEIGHT = 0.75
 
-# Build-up size premium added to the cost of equity, by market capitalisation.
-# The Duff & Phelps / Ibbotson size effect: smaller companies carry a higher
-# required return (illiquidity, fragility, less coverage), the largest a small
-# discount (deep liquidity, quality, lower distress risk). Standard in the
-# build-up method — Ke = Rf + beta*ERP + size premium — and symmetric, so it is
-# not a mega-cap thumb on the scale: a micro-cap is penalised exactly as a
-# mega-cap is credited. Bounds are (min_market_cap_inclusive, premium).
+# Size premium added to the cost of equity, by market capitalisation. The
+# empirical size effect (Duff & Phelps / CRSP deciles) is a SMALL-CAP phenomenon:
+# smaller companies carry a higher required return (illiquidity, fragility, less
+# coverage), and the effect decays to ~0 for the largest decile. It is NOT
+# symmetric — the data do not support a NEGATIVE premium (a "credit") for large or
+# mega caps, so an earlier -1.5% mega-cap discount was a house thumb on the scale
+# dressed as a standard default. Large and mega caps therefore get NO size
+# adjustment: their cost of equity is pure CAPM (Ke = Rf + beta*ERP), which is the
+# transparent, defensible construction. Only small and mid caps carry the (positive,
+# empirically grounded) premium. Bounds are (min_market_cap_inclusive, premium).
 SIZE_PREMIUM_TIERS = (
-    (200e9, -0.015),    # >= $200bn  : mega-cap, -1.5%
-    (10e9, -0.005),     # $10-200bn  : large-cap, -0.5%
+    (200e9, 0.0),       # >= $200bn  : mega-cap, none (pure CAPM)
+    (10e9, 0.0),        # $10-200bn  : large-cap, none (pure CAPM)
     (2e9, 0.010),       # $2-10bn    : mid-cap, +1.0%
     (0.0, 0.025),       # < $2bn     : small-cap, +2.5%
 )

@@ -220,6 +220,21 @@ def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
         if same_currency
         else f"market cap ~USD {market_cap_usd / 1e9:,.0f}bn"
     )
+    if premium > 0:
+        derivation = f"Empirical small-cap size premium for a {label} ({cap_text})"
+        rationale = (
+            "The documented size effect (Duff & Phelps / CRSP deciles): smaller "
+            "companies require a higher return for illiquidity, fragility and thin "
+            "coverage. Added to CAPM only where the evidence supports it — small and "
+            "mid caps."
+        )
+    else:
+        derivation = f"No size premium for a {label} ({cap_text}) — cost of equity is pure CAPM"
+        rationale = (
+            "The empirical size premium decays to ~0 for the largest companies, and the "
+            "data do not support a NEGATIVE premium, so none is applied: this cost of "
+            "equity is a transparent CAPM (Rf + beta x ERP), with no size thumb on the scale."
+        )
     ledger.add(
         Assumption(
             key="size_premium",
@@ -227,13 +242,8 @@ def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
             value=premium,
             unit="%",
             source=SOURCE_DEFAULT,
-            derivation=f"Build-up size premium for a {label} ({cap_text})",
-            rationale=(
-                "The documented size effect: smaller companies require a higher "
-                "return for illiquidity and fragility, the largest a small discount "
-                "for depth and quality. Standard in the build-up cost of equity, and "
-                "symmetric across the size spectrum."
-            ),
+            derivation=derivation,
+            rationale=rationale,
         )
     )
     return premium

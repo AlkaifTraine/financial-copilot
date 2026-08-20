@@ -68,6 +68,7 @@ class CompetitiveAnalysis:
 
     moat_strength: str = "Undetermined"     # Wide / Narrow / None (how strong TODAY)
     moat_direction: str = "Stable"          # Widening / Stable / Narrowing (trajectory)
+    strength_basis: str = ""                # how moat_strength follows from the dimensions
     moat_summary: str = ""
     dimensions: list[MoatDimension] = field(default_factory=list)
     competitive_threats: list[str] = field(default_factory=list)
@@ -85,6 +86,38 @@ class CompetitiveAnalysis:
         payload["management_vs_us"] = [m.to_dict() for m in self.management_vs_us]
         payload["moat_rating"] = self.moat_strength
         return payload
+
+
+_STRENGTH_POINTS = {"strong": 3, "moderate": 2, "medium": 2, "weak": 1, "none": 0, "limited": 1}
+
+
+def derive_moat_strength(dimensions: list[MoatDimension]) -> tuple[str, str]:
+    """Overall moat strength as a reproducible function of the per-dimension scores.
+
+    The conclusion is not an independent LLM assertion: it is the average of the
+    scored dimensions mapped to Wide / Narrow / None, with the arithmetic shown so
+    a reader can reproduce it. Returns (label, basis); ("", "") if nothing scored.
+    """
+    scored = [
+        (d.dimension, _STRENGTH_POINTS[d.strength.strip().lower().split()[0]])
+        for d in dimensions
+        if d.strength and d.strength.strip().lower().split()[0] in _STRENGTH_POINTS
+    ]
+    if not scored:
+        return "", ""
+    average = sum(points for _, points in scored) / len(scored)
+    if average >= 2.3:
+        label = "Wide"
+    elif average >= 1.3:
+        label = "Narrow"
+    else:
+        label = "None"
+    detail = ", ".join(f"{name} {points}/3" for name, points in scored)
+    basis = (
+        f"Derived from the {len(scored)} scored dimensions (Strong 3 / Moderate 2 / Weak 1 / "
+        f"None 0): {detail} — average {average:.1f}/3, which maps to a {label} moat."
+    )
+    return label, basis
 
 
 def _facts(valuation) -> str:
@@ -215,14 +248,27 @@ def generate_competitive(
         if isinstance(entry, dict) and _str(entry, "topic") and _str(entry, "management_statement")
     ]
 
-    strength = _str(payload, "moat_strength") or "Undetermined"
+    stated_strength = _str(payload, "moat_strength") or "Undetermined"
     summary = _str(payload, "moat_summary")
-    if strength == "Undetermined" and not summary and not dimensions and not management:
+    if stated_strength == "Undetermined" and not summary and not dimensions and not management:
         return _fallback(valuation)
+
+    # The overall strength is DERIVED from the scored dimensions, so the conclusion
+    # is reproducible rather than an unsupported judgment. If the model's own label
+    # disagreed with what its dimension scores imply, the derived one wins and the
+    # disagreement is recorded in the basis.
+    derived_strength, basis = derive_moat_strength(dimensions)
+    if derived_strength:
+        strength = derived_strength
+        if stated_strength not in ("Undetermined", derived_strength):
+            basis += f" (The model's freehand label was '{stated_strength}'; the derivation governs.)"
+    else:
+        strength = stated_strength
 
     return CompetitiveAnalysis(
         moat_strength=strength,
         moat_direction=_str(payload, "moat_direction") or "Stable",
+        strength_basis=basis,
         moat_summary=summary,
         dimensions=dimensions,
         competitive_threats=_list("competitive_threats"),

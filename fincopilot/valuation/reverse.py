@@ -234,6 +234,12 @@ def build_priced_in(
             unit="%",
             base_value=base_cagr,
             implied_value=_cagr(implied_path),
+            note=(
+                f"One front-loaded path, not two assumptions: ~{implied_year_one_growth * 100:.0f}% "
+                f"growth in year 1 decaying toward the terminal rate, which compounds to this "
+                f"{_cagr(implied_path) * 100:.1f}% {horizon}-year CAGR. The high first-year figure and "
+                f"the CAGR are the same trajectory seen at two points."
+            ),
         ))
     else:
         rows.append(PricedInRow(
@@ -341,11 +347,15 @@ def build_priced_in(
         ).fair_value_per_share
 
     implied_terminal = _solve(terminal_growth_value, price, 0.0, wacc - 0.0025)
-    terminal_note = ""
+    terminal_note = (
+        "A mathematical solution holding all other assumptions fixed: the perpetual rate that "
+        "alone would justify the price, not a claim that investors literally assume this rate "
+        "forever. "
+    )
     if implied_terminal is None:
         terminal_note = "Unreachable even at a perpetual rate just below the discount rate."
     elif implied_terminal > 0.04:
-        terminal_note = "Above long-run GDP growth — it implies the company outgrows the economy forever."
+        terminal_note += "It sits above long-run GDP growth — implying the company outgrows the economy forever."
     rows.append(PricedInRow(
         key="terminal_growth",
         label="Terminal growth",

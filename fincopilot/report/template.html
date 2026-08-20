@@ -332,6 +332,7 @@
     <span class="fc-chip {% if cp.moat_direction == 'Widening' %}positive{% elif cp.moat_direction == 'Narrowing' %}negative{% endif %}"><b>Direction</b> · {{ cp.moat_direction }}</span>
   </div>
   {% if cp.moat_summary %}<p class="fc-quality-note">{{ cp.moat_summary }}</p>{% endif %}
+  {% if cp.strength_basis %}<div class="fc-evidence">{{ cp.strength_basis }}</div>{% endif %}
   {% if cp.dimensions %}
   <div class="fc-scroll"><table class="fc-t">
     <thead><tr style="text-align:left;">
@@ -643,6 +644,13 @@
     </div>
     <div class="meta">{{ a.derivation }}</div>
     {% if a.rationale %}<div class="why">{{ a.rationale }}</div>{% endif %}
+    {% if a.provenance %}
+    <div class="why" style="margin-top:4px;">
+      <strong>Provenance:</strong>
+      {% for label in ['historical','guidance','industry','competitive','management'] %}{% if a.provenance[label] %}<br><span style="color:var(--ink-2);">{{ label|capitalize }}:</span> {{ a.provenance[label] }}{% endif %}{% endfor %}
+      <br><span style="color:var(--ink-2);">→ Model output:</span> {{ a.display }}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
   {% endif %}
@@ -660,11 +668,12 @@
   {% if r.comps and r.comps.peers %}
   <h2 class="fc-h">Comparable Companies</h2>
   <div class="fc-scroll"><table class="fc-t">
-    <thead><tr><th>Company</th><th>Market cap</th><th>P/E</th><th>EV/EBITDA</th><th>EV/Sales</th></tr></thead>
+    <thead><tr><th>Company</th><th>Role</th><th>Market cap</th><th>P/E</th><th>EV/EBITDA</th><th>EV/Sales</th></tr></thead>
     <tbody>
     {% for p in r.comps.peers %}
-      <tr>
-        <td>{{ p.name }} <span style="color:var(--muted)">{{ p.ticker }}</span></td>
+      <tr{% if not p.in_median %} style="color:var(--muted);"{% endif %}>
+        <td>{{ p.name }} <span style="color:var(--muted)">{{ p.ticker }}</span>{% if p.rationale %}<br><span style="color:var(--muted);font-size:11px;">{{ p.rationale }}</span>{% endif %}</td>
+        <td style="white-space:nowrap;">{% if p.tier == 'direct' %}Direct{% else %}Adjacent*{% endif %}</td>
         <td>{{ money(p.market_cap) }}</td>
         <td>{{ num(p.pe) }}</td>
         <td>{{ num(p.ev_to_ebitda) }}</td>
@@ -673,6 +682,7 @@
     {% endfor %}
     </tbody>
   </table></div>
+  <div class="fc-evidence">*Adjacent peers are structurally different and are excluded from the median.</div>
   {% for n in r.comps.notes %}<div class="fc-evidence">{{ n }}</div>{% endfor %}
   {% endif %}
 

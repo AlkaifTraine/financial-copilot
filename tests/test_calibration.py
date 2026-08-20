@@ -31,21 +31,23 @@ def _history(
 
 
 class TestSizePremium:
-    def test_megacap_gets_a_discount(self):
-        assert _size_premium(_history(market_cap=3e12), AssumptionLedger()) == pytest.approx(-0.015)
+    def test_megacap_gets_no_size_premium(self):
+        # No negative "credit": the empirical premium is ~0 for the largest, and a
+        # mega-cap's cost of equity is pure CAPM.
+        assert _size_premium(_history(market_cap=3e12), AssumptionLedger()) == pytest.approx(0.0)
 
-    def test_largecap_small_discount(self):
-        assert _size_premium(_history(market_cap=50e9), AssumptionLedger()) == pytest.approx(-0.005)
+    def test_largecap_gets_no_size_premium(self):
+        assert _size_premium(_history(market_cap=50e9), AssumptionLedger()) == pytest.approx(0.0)
 
     def test_smallcap_gets_a_premium(self):
         assert _size_premium(_history(market_cap=1e9), AssumptionLedger()) == pytest.approx(0.025)
 
-    def test_symmetric_not_a_megacap_thumb(self):
-        # A small cap is penalised as much as a mega-cap is credited is NOT the
-        # claim; the claim is the curve is monotonic in size.
+    def test_premium_is_monotonic_and_never_negative(self):
+        # Non-increasing in size, and the largest tiers are zero — never negative.
         caps = [1e9, 5e9, 50e9, 3e12]
         premia = [_size_premium(_history(market_cap=c), AssumptionLedger()) for c in caps]
         assert premia == sorted(premia, reverse=True)
+        assert min(premia) == 0.0
 
     def test_local_currency_cap_converted_before_bucketing(self):
         # A ₹300bn mid-cap (~$3.6bn) must NOT clear the USD mega-cap threshold.
@@ -53,9 +55,9 @@ class TestSizePremium:
         assert prem == pytest.approx(0.010)          # mid-cap, not mega-cap
 
     def test_large_rupee_company_is_large_cap(self):
-        # TCS-scale ~₹14tn (~$168bn) lands large-cap, not mega-cap.
+        # TCS-scale ~₹14tn (~$168bn) lands large-cap: no size premium (pure CAPM).
         prem = _size_premium(_history(market_cap=14e12, currency="INR"), AssumptionLedger())
-        assert prem == pytest.approx(-0.005)
+        assert prem == pytest.approx(0.0)
 
     def test_unknown_currency_skips_premium(self):
         prem = _size_premium(_history(market_cap=500e9, currency="XYZ"), AssumptionLedger())
@@ -74,8 +76,10 @@ class TestHorizonBeta:
     def test_high_beta_megacap_wacc_is_reasonable(self):
         led = AssumptionLedger()
         wacc = compute_wacc(_history(market_cap=3e12, beta=2.2), _company(), led)
-        # A raw 2.2 beta must not still produce a ~15% rate after horizon + size.
-        assert wacc < 0.13
+        # A raw 2.2 beta must not still produce a ~15% rate after the horizon-beta
+        # adjustment. (No longer flattered by a size credit — mega caps are pure
+        # CAPM now — so ~13.5% is the honest result, still well short of 15%.)
+        assert wacc < 0.14
 
 
 class _Company:

@@ -135,12 +135,18 @@ Propose three forward assumptions. Ground each in the history and the commentary
 2. terminal_operating_margin - the operating margin this business sustains at MATURITY, ~10 years out (decimal). Derive it ECONOMICALLY, not from recent history, weighing: normalized competitive economics, product/segment mix, pricing power, scale economies, competitive intensity and likely new entrants, industry structure, and long-run capital intensity — checked against, but NOT bound to, historical evidence. A company at a peak margin today may well settle below it; a scaling one may rise. If your estimate differs materially from the current/historical margin, that is allowed — say plainly WHY in the rationale. Do not anchor to the historical range.
 3. terminal_growth_rate - perpetual growth after the forecast period (decimal, between 0.01 and 0.04; must be below long-run GDP growth)
 
-For each, give a one-sentence rationale citing something specific from the data or commentary.
+For each, give a one-sentence rationale AND expose its PROVENANCE — the evidence chain that leads to your number. Each provenance field is a short phrase; use "n/a" only when the evidence genuinely does not exist (do not invent it):
+- historical: what the company's own reported history shows on this metric
+- guidance: current management guidance on it, if any (with its period)
+- industry: relevant industry / end-market evidence
+- competitive: competitive dynamics bearing on it
+- management: specific management commentary you are relying on
+Your value is the model output that follows from this chain.
 
 Return JSON:
-{{"year_one_revenue_growth": {{"value": 0.0, "rationale": "..."}},
-  "terminal_operating_margin": {{"value": 0.0, "rationale": "..."}},
-  "terminal_growth_rate": {{"value": 0.0, "rationale": "..."}}}}"""
+{{"year_one_revenue_growth": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}},
+  "terminal_operating_margin": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}},
+  "terminal_growth_rate": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}}}}"""
 
 
 def _history_table(history: FinancialHistory) -> str:
@@ -225,6 +231,25 @@ def _model_value(proposal: dict, key: str) -> tuple[float | None, str]:
         return float(entry), ""
     except (TypeError, ValueError):
         return None, ""
+
+
+_PROVENANCE_KEYS = ("historical", "guidance", "industry", "competitive", "management")
+
+
+def _model_provenance(proposal: dict, key: str) -> dict:
+    """The evidence chain the model gave for an assumption, cleaned of empties."""
+    entry = proposal.get(key)
+    if not isinstance(entry, dict):
+        return {}
+    raw = entry.get("provenance")
+    if not isinstance(raw, dict):
+        return {}
+    chain = {}
+    for field_name in _PROVENANCE_KEYS:
+        value = str(raw.get(field_name) or "").strip()
+        if value and value.lower() not in ("n/a", "none", "-"):
+            chain[field_name] = value
+    return chain
 
 
 def derive_inputs(
@@ -319,6 +344,7 @@ def derive_inputs(
             bounds=config.TERMINAL_GROWTH_BOUNDS,
             clamped=terminal_clamped,
             raw_value=raw_terminal,
+            provenance=_model_provenance(proposal, "terminal_growth_rate"),
         )
     )
 
@@ -376,6 +402,7 @@ def derive_inputs(
             bounds=growth_bounds,
             clamped=was_clamped,
             raw_value=raw_growth,
+            provenance=_model_provenance(proposal, "year_one_revenue_growth"),
         )
     )
 
@@ -440,6 +467,7 @@ def derive_inputs(
             bounds=margin_bounds,
             clamped=margin_clamped,
             raw_value=raw_margin,
+            provenance=_model_provenance(proposal, "terminal_operating_margin"),
         )
     )
 

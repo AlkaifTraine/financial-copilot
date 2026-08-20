@@ -469,6 +469,8 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         ))
         if cp.get("moat_summary"):
             story.append(Paragraph(cp["moat_summary"], styles["body"]))
+        if cp.get("strength_basis"):
+            story.append(Paragraph(cp["strength_basis"], styles["small"]))
         if cp.get("dimensions"):
             story.append(Spacer(1, 3))
             header = ["Source of advantage", "Assessment", "Strength"]
@@ -803,7 +805,19 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         rows = [["Assumption", "Value", "Basis", "Derivation"]]
         for item in report.assumptions:
             basis = item["source_label"] + (" (bounded)" if item["clamped"] else "")
-            rows.append([item["label"], item["display"], basis, item["derivation"]])
+            derivation = item["derivation"]
+            prov = item.get("provenance") or {}
+            if prov:
+                chain = " &nbsp; ".join(
+                    f'<font color="#7c8794">{k.capitalize()}:</font> {prov[k]}'
+                    for k in ("historical", "guidance", "industry", "competitive", "management")
+                    if prov.get(k)
+                )
+                derivation += (
+                    f'<br/><font size="6.5">Provenance: {chain} '
+                    f'<b>&#8594; {item["display"]}</b></font>'
+                )
+            rows.append([item["label"], item["display"], basis, derivation])
         widths = [CONTENT_WIDTH * w for w in (0.22, 0.11, 0.19, 0.48)]
         table = _table(rows, widths, styles)
         table.setStyle(TableStyle([("ALIGN", (2, 0), (-1, -1), "LEFT")]))
@@ -824,15 +838,20 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
 
     # -- comparables ------------------------------------------------------
     if report.comps and report.comps.get("peers"):
-        rows = [["Company", "Market cap", "P/E", "EV/EBITDA", "EV/Sales"]]
+        rows = [["Company", "Role", "Market cap", "P/E", "EV/EBITDA", "EV/Sales"]]
         for peer in report.comps["peers"]:
+            name = f"{peer['name']} ({peer['ticker']})"
+            if peer.get("rationale"):
+                name += f'<br/><font size="6.5" color="#7c8794">{peer["rationale"]}</font>'
             rows.append([
-                f"{peer['name']} ({peer['ticker']})", _money(peer["market_cap"]),
+                name,
+                "Direct" if peer.get("tier", "direct") == "direct" else "Adjacent*",
+                _money(peer["market_cap"]),
                 f"{peer['pe']:,.1f}x" if peer.get("pe") else "-",
                 f"{peer['ev_to_ebitda']:,.1f}x" if peer.get("ev_to_ebitda") else "-",
                 f"{peer['ev_to_sales']:,.1f}x" if peer.get("ev_to_sales") else "-",
             ])
-        widths = [CONTENT_WIDTH * w for w in (0.36, 0.18, 0.14, 0.16, 0.16)]
+        widths = [CONTENT_WIDTH * w for w in (0.34, 0.12, 0.14, 0.12, 0.14, 0.14)]
         story += [Paragraph("COMPARABLE COMPANIES", styles["h2"]),
                   _table(rows, widths, styles)]
         for note in report.comps.get("notes", []):

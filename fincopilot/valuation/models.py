@@ -45,6 +45,9 @@ class Assumption:
     bounds: tuple[float, float] | None = None
     clamped: bool = False           # True if a proposal was pulled into bounds
     raw_value: float | None = None  # pre-clamp value, when clamped
+    # Evidence chain for a model estimate: historical -> guidance -> industry ->
+    # competitive -> management -> model output. Empty for mechanical assumptions.
+    provenance: dict = field(default_factory=dict)
 
     def format(self, value: float | None) -> str:
         """Render a value in this assumption's own unit.
@@ -193,6 +196,9 @@ class PeerMultiple:
     ev_to_ebitda: float | None = None
     ev_to_sales: float | None = None
     revenue_growth: float | None = None
+    tier: str = "direct"          # "direct" or "adjacent" (structurally different)
+    rationale: str = ""           # why this peer is included
+    in_median: bool = True        # whether it feeds the peer median
 
 
 @dataclass

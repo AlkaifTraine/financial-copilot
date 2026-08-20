@@ -156,3 +156,20 @@ class TestTemporalClassification:
         cats = [Catalyst(event="Next earnings", timing="Next earnings date", direction="Two-sided", metric="rev")]
         upcoming, passed = classify_catalysts(cats, "2026-08-20")
         assert len(upcoming) == 1 and not passed
+
+
+class TestMoatReproducibility:
+    def test_strength_is_derived_from_dimension_scores(self):
+        from fincopilot.report.competitive import MoatDimension, derive_moat_strength
+        strong = [MoatDimension("Software", "CUDA lock-in", "Strong"),
+                  MoatDimension("Scale", "Largest", "Strong"),
+                  MoatDimension("Switching", "High", "Moderate")]
+        label, basis = derive_moat_strength(strong)
+        assert label == "Wide"                 # avg (3+3+2)/3 = 2.67 -> Wide
+        assert "2.7/3" in basis and "Software 3/3" in basis
+        weak = [MoatDimension("A", "x", "Weak"), MoatDimension("B", "y", "None")]
+        assert derive_moat_strength(weak)[0] == "None"
+
+    def test_empty_dimensions_yield_no_derivation(self):
+        from fincopilot.report.competitive import derive_moat_strength
+        assert derive_moat_strength([]) == ("", "")

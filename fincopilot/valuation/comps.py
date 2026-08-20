@@ -21,10 +21,26 @@ from .models import CompsResult, PeerMultiple
 log = logging.getLogger(__name__)
 
 # Curated peer groups. Deliberately narrow: every entry is a set a practitioner
-# would actually accept as comparable.
-_PEER_GROUPS: dict[str, list[str]] = {
-    "NVDA": ["AMD", "AVGO", "INTC", "QCOM", "TSM"],
-    "AMD": ["NVDA", "INTC", "AVGO", "QCOM"],
+# would actually accept as comparable. Each peer is tagged DIRECT (same business
+# model — a like-for-like multiple comparison) or ADJACENT (strategically relevant
+# but STRUCTURALLY different, e.g. a foundry versus a fabless designer), with the
+# reason it is included. Only DIRECT peers feed the median; adjacent names are
+# shown for context but would distort a like-for-like multiple.
+#
+# Entries are either a bare ticker (DIRECT, generic sector-peer rationale) or a
+# (ticker, tier, rationale) tuple where the distinction matters.
+_PEER_GROUPS: dict[str, list] = {
+    "NVDA": [
+        ("AMD", "direct", "Fabless designer competing directly in GPUs and AI accelerators"),
+        ("AVGO", "direct", "Fabless designer of AI/networking silicon; direct AI-infrastructure competitor"),
+        ("QCOM", "direct", "Fabless designer of advanced SoCs; same fabless, high-margin economics"),
+        ("INTC", "direct", "Designs and sells competing datacenter CPUs and accelerators"),
+        ("TSM", "adjacent", "Foundry that MANUFACTURES chips rather than designing them — "
+                            "strategically vital to NVIDIA but a structurally different, far more "
+                            "capital-intensive and lower-margin business; shown for context, "
+                            "excluded from the median"),
+    ],
+    "AMD": ["NVDA", "AVGO", "QCOM", ("INTC", "direct", "Competing x86 CPU and datacenter vendor")],
     "AVGO": ["NVDA", "QCOM", "TXN", "AMD"],
     "INTC": ["AMD", "NVDA", "TXN", "MU"],
     "MSFT": ["GOOGL", "AMZN", "ORCL", "CRM", "AAPL"],
@@ -40,6 +56,14 @@ _PEER_GROUPS: dict[str, list[str]] = {
     "WIPRO.NS": ["TCS.NS", "INFY.NS", "HCLTECH.NS"],
     "RELIANCE.NS": ["ONGC.NS", "BPCL.NS", "IOC.NS"],
 }
+
+
+def _normalize_peer(entry) -> tuple[str, str, str]:
+    """(ticker, tier, rationale) from a bare ticker or an annotated tuple."""
+    if isinstance(entry, tuple):
+        ticker, tier, rationale = entry
+        return ticker, tier, rationale
+    return entry, "direct", "Sector peer with a comparable business model"
 
 
 def _fetch_multiple(ticker: str) -> PeerMultiple | None:
@@ -93,23 +117,42 @@ def build_comps(
         )
         return result
 
-    for peer in peers:
-        multiple = _fetch_multiple(peer)
+    for entry in peers:
+        peer_ticker, tier, rationale = _normalize_peer(entry)
+        multiple = _fetch_multiple(peer_ticker)
         if multiple:
+            multiple.tier = tier
+            multiple.rationale = rationale
+            multiple.in_median = tier == "direct"
             result.peers.append(multiple)
 
     if not result.peers:
         result.notes.append("Peer market data could not be retrieved.")
         return result
 
-    result.median_pe = _median([p.pe for p in result.peers])
-    result.median_ev_sales = _median([p.ev_to_sales for p in result.peers])
+    # Only DIRECT peers set the multiple. A structurally different peer (a foundry
+    # against a fabless designer) would distort a like-for-like median, so it is
+    # shown for context but kept out of the number.
+    median_peers = [p for p in result.peers if p.in_median] or result.peers
+    result.median_pe = _median([p.pe for p in median_peers])
+    result.median_ev_sales = _median([p.ev_to_sales for p in median_peers])
+
+    direct_names = ", ".join(p.ticker for p in median_peers)
+    adjacent = [p for p in result.peers if not p.in_median]
+    selection = f"Peer median is taken over the DIRECT peers ({direct_names})."
+    if adjacent:
+        selection += (
+            " Shown but excluded as structurally different: "
+            + ", ".join(f"{p.ticker} ({p.rationale.split(';')[0].split('—')[0].strip()})" for p in adjacent)
+            + "."
+        )
+    result.notes.append(selection)
 
     if result.median_pe and net_income and shares_outstanding:
         eps = net_income / shares_outstanding
         result.implied_value_per_share = result.median_pe * eps
         result.notes.append(
-            f"Implied value applies the peer median P/E of {result.median_pe:.1f}x "
+            f"Implied value applies the direct-peer median P/E of {result.median_pe:.1f}x "
             f"to trailing EPS of {eps:.2f}."
         )
 
