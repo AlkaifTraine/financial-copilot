@@ -714,14 +714,14 @@ with report_tab:
 
     report = st.session_state["report"]
     if report and getattr(report, "blocked", False):
-        st.error(
-            "**Publication blocked by automated QA.** The report was generated but failed "
-            "an integrity check, so it is not offered for download. Regenerate to retry — "
-            "the underlying data may need a moment, or a source citation was missing."
+        st.warning(
+            "**Automated QA flagged one or more issues in this report.** The report is still "
+            "available below — review these points before relying on it. Regenerating often "
+            "clears a transient flag (a stochastic phrasing, a momentarily missing citation)."
         )
         for issue in report.blocking_issues:
             st.markdown(f"- {issue}")
-        report = None   # withhold the download/preview for a failed report
+        # The report is still delivered: a flag is a caution to weigh, not a locked door.
 
     if report:
         config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)

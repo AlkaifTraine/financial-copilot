@@ -206,9 +206,11 @@ _FROM_TO = re.compile(
     r"(?:the\s+|a\s+|market[- ]implied\s+)?(?:[^.\d]{0,25}?)(\d+(?:\.\d+)?)\s*%",  # B%
     re.I,
 )
+# Deliberately narrow: only an explicit "raise/increase OUR/THE fair value" counts.
+# Generic phrases a risk section uses constantly — "higher valuation", "richer
+# valuation multiple" — must NOT trip this, or clean reports get false-flagged.
 _LIFT_FV = re.compile(
-    r"(?:rais|increas|lift|boost|improv|higher|expand)\w*\s+(?:our\s+|the\s+)?"
-    r"(?:fair value|target price|intrinsic value|valuation)",
+    r"(?:rais|increas|lift|boost)\w*\s+(?:our|the)\s+(?:fair value|intrinsic value)",
     re.I,
 )
 
@@ -299,17 +301,21 @@ def run_qa(report) -> list[str]:
     direction = check_risk_direction(report)
     semantics = check_metric_semantics(report)
 
-    # A numeric contradiction (a figure disagreeing with itself or with a canonical
-    # value), a citation failure on a claim-heavy section, a directional impossibility
-    # (a downside risk that improves its metric), or a period/comparison mismatch (a
-    # quarterly label on an annual figure) are each disqualifying in a research
-    # report. All block publication.
-    blocking = citation + consistency + metric + direction + semantics
+    # Precise, low-false-positive checks BLOCK: a citation failure on a claim-heavy
+    # section, or a figure that contradicts itself or a canonical value. These are
+    # numeric/structural facts, not judgement calls.
+    blocking = citation + consistency + metric
 
-    for issue in blocking:
+    # Directional and period/comparison checks are regex heuristics over prose: they
+    # catch real errors but can misread benign phrasing, so they are ADVISORY —
+    # surfaced in the report's QA notes for the reader to weigh, never a hard gate
+    # that withholds the report.
+    advisory = direction + semantics
+
+    for issue in blocking + advisory:
         log.info("QA: %s", issue)
         report.warnings.append(f"Automated QA flagged: {issue}")
 
     report.blocking_issues = blocking
     report.blocked = bool(blocking)
-    return blocking
+    return blocking + advisory

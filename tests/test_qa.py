@@ -8,7 +8,13 @@ and each specific defect must be caught.
 from __future__ import annotations
 
 from fincopilot.report.models import Evidence, ReportModel, Section
-from fincopilot.report.qa import audit_citations, check_consistency, run_qa
+from fincopilot.report.qa import (
+    audit_citations,
+    check_consistency,
+    check_metric_semantics,
+    check_risk_direction,
+    run_qa,
+)
 
 
 def _evidence(n: int) -> list[Evidence]:
@@ -146,7 +152,8 @@ class TestMetricGate:
 
 
 class TestRiskDirection:
-    """Directional QA: a downside risk cannot improve its own metric."""
+    """Directional QA: a downside risk cannot improve its own metric. Advisory —
+    it flags the finding but must NOT block the report (regex-over-prose heuristic)."""
 
     def _report(self, financial_impact="", valuation_impact=""):
         report = ReportModel(company_name="X", ticker="X", currency="USD")
@@ -156,30 +163,45 @@ class TestRiskDirection:
         }]
         return report
 
-    def test_reduce_toward_higher_value_blocks(self):
+    def test_reduce_toward_higher_value_is_flagged(self):
         report = self._report(
             financial_impact="A disruption could reduce revenue CAGR from our 13.3% base case "
                              "toward market-implied 25.3%."
         )
-        run_qa(report)
-        assert report.blocked is True
-        assert any("directional" in i.lower() for i in report.blocking_issues)
+        issues = check_risk_direction(report)
+        assert any("directional" in i.lower() for i in issues)
 
-    def test_clean_downside_does_not_block(self):
+    def test_clean_downside_not_flagged(self):
         report = self._report(
             financial_impact="A disruption could cut revenue CAGR from our 13.3% base toward 8.0%."
         )
-        run_qa(report)
-        assert report.blocked is False
+        assert check_risk_direction(report) == []
 
-    def test_risk_that_raises_fair_value_blocks(self):
+    def test_risk_that_raises_fair_value_is_flagged(self):
         report = self._report(valuation_impact="This would raise our fair value materially.")
-        run_qa(report)
-        assert any("wrong way" in i.lower() for i in report.blocking_issues)
+        assert any("wrong way" in i.lower() for i in check_risk_direction(report))
+
+    def test_higher_valuation_phrase_is_not_a_false_positive(self):
+        # A risk mentioning "a higher valuation multiple" must NOT trip the fair-value check.
+        report = self._report(
+            valuation_impact="Peers trade at a higher valuation, and any de-rating toward them "
+                             "would pressure the stock."
+        )
+        assert check_risk_direction(report) == []
+
+    def test_directional_finding_is_advisory_not_blocking(self):
+        report = self._report(
+            financial_impact="A disruption could reduce revenue CAGR from our 13.3% base case "
+                             "toward market-implied 25.3%."
+        )
+        findings = run_qa(report)
+        assert report.blocked is False                                    # advisory, not a gate
+        assert any("directional" in f.lower() for f in findings)          # still surfaced
+        assert any("directional" in w.lower() for w in report.warnings)   # and in the QA notes
 
 
 class TestMetricSemantics:
-    """Semantic QA: a metric's period label must match its reading."""
+    """Semantic QA: a metric's period label must match its reading. Advisory."""
 
     def _report(self, label, assumption=""):
         report = ReportModel(company_name="X", ticker="X", currency="USD")
@@ -189,13 +211,16 @@ class TestMetricSemantics:
         }]}
         return report
 
-    def test_quarterly_label_on_annual_metric_blocks(self):
+    def test_quarterly_label_on_annual_metric_is_flagged(self):
         report = self._report("Quarterly revenue growth rate", assumption="Our 65% YoY FY2026 growth")
-        run_qa(report)
-        assert report.blocked is True
-        assert any("mismatch" in i.lower() for i in report.blocking_issues)
+        issues = check_metric_semantics(report)
+        assert any("mismatch" in i.lower() for i in issues)
 
-    def test_matching_period_does_not_block(self):
+    def test_matching_period_not_flagged(self):
         report = self._report("Revenue growth (YoY)", assumption="Our 65% YoY growth")
+        assert check_metric_semantics(report) == []
+
+    def test_semantic_finding_is_advisory_not_blocking(self):
+        report = self._report("Quarterly revenue growth rate", assumption="Our 65% YoY FY2026 growth")
         run_qa(report)
         assert report.blocked is False
