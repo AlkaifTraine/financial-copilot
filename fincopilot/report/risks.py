@@ -24,6 +24,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from ..fundamentals import FinancialHistory
+from .. import config
 from ..llm import complete_json
 from ..resolve import Company
 
@@ -228,8 +229,9 @@ def generate_risks(
             context=(qualitative_context or "None retrieved.")[:4000],
         ),
         system=_SYSTEM,
+        model=config.WRITER_MODEL,
         temperature=0.2,
-        max_tokens=1300,
+        max_tokens=1600,   # richer schema (each risk now carries a provenance basis)
     )
 
     if not isinstance(payload, dict) or not isinstance(payload.get("risks"), list):

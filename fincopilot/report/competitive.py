@@ -29,6 +29,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 
 from ..fundamentals import FinancialHistory
+from .. import config
 from ..llm import complete_json
 from ..resolve import Company
 
@@ -214,8 +215,12 @@ def generate_competitive(
             context=(qualitative_context or "None retrieved.")[:4000],
         ),
         system=_SYSTEM,
+        model=config.WRITER_MODEL,
         temperature=0.2,
-        max_tokens=1400,
+        # Higher ceiling: the moat dimensions (with confidence + evidence) and the
+        # management-vs-us rows (with source dates and quantified model impact) are a
+        # richer schema than before and were truncating at 1400.
+        max_tokens=2200,
     )
 
     if not isinstance(payload, dict):

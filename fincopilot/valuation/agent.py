@@ -139,6 +139,7 @@ def critique_assumptions(
             context=(qualitative_context or "None retrieved.")[:3000],
         ),
         system=_SYSTEM,
+        model=config.WRITER_MODEL,
         temperature=0.0,
         max_tokens=700,
     )

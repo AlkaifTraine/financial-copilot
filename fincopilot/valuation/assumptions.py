@@ -211,6 +211,7 @@ def _propose(history: FinancialHistory, company: Company, context: str) -> dict:
             history=_history_table(history),
             context=(context or "No management commentary was retrieved.")[:4000],
         ),
+        model=config.WRITER_MODEL,
         temperature=0.0,
         max_tokens=700,
     )

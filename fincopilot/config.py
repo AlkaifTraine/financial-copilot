@@ -75,14 +75,19 @@ for _d in (DATA_DIR, INDEX_DIR, REPORTS_DIR, CHARTS_DIR, CACHE_DIR, OVERRIDES_DI
 # Models
 # ---------------------------------------------------------------------------
 
-# Cheap, fast model used for the high-volume calls: query rewriting, reranking,
-# metric extraction. These run many times per user action.
+# Cheap, fast model for MECHANICAL and structured-extraction calls: query
+# rewriting, reranking, catalyst/segment extraction. These run many times and are
+# constrained enough that a stronger model adds little — and several have
+# deterministic post-processing (date anchoring, reconciliation) on top.
 FAST_MODEL = "gpt-4.1-mini"
 
-# Model used for prose a human will actually read end-to-end (report sections,
-# assumption rationales). Same model today; split out so it can be upgraded
-# independently without touching call sites.
-WRITER_MODEL = "gpt-4.1-mini"
+# Stronger model for the ANALYSIS and reader-facing PROSE, where reasoning quality
+# actually changes the output: the assumption drivers (which set the whole DCF), the
+# agent calibration, the thesis argument, the quantified risks, the competitive/
+# moat analysis, and the narrative sections a human reads end-to-end. Wired per call
+# site via model=config.WRITER_MODEL, so the blend is explicit and tunable: move any
+# call between FAST_MODEL and WRITER_MODEL by editing that one call.
+WRITER_MODEL = "gpt-4.1"
 
 # Deterministic by default. Report prose gets a small amount of temperature so
 # it does not read like a form letter; anything numeric runs at 0.

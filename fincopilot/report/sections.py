@@ -224,6 +224,7 @@ def build_section(
             context=result.context_block,
         ),
         system=_SYSTEM,
+        model=config.WRITER_MODEL,
         temperature=config.TEMPERATURE_PROSE,
         max_tokens=1100,
     )
