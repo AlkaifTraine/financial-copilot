@@ -23,6 +23,26 @@ log = logging.getLogger(__name__)
 
 _client = None
 
+# Lightweight per-process usage tracking, so a report's LLM cost is observable.
+_usage: dict[str, int] = {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+
+
+def reset_usage() -> None:
+    _usage.update(calls=0, prompt_tokens=0, completion_tokens=0)
+
+
+def get_usage() -> dict:
+    return dict(_usage)
+
+
+def _record(response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    _usage["calls"] += 1
+    _usage["prompt_tokens"] += getattr(usage, "prompt_tokens", 0) or 0
+    _usage["completion_tokens"] += getattr(usage, "completion_tokens", 0) or 0
+
 
 def client():
     global _client
@@ -62,6 +82,7 @@ def complete(
     for attempt in range(retries):
         try:
             response = client().chat.completions.create(**kwargs)
+            _record(response)
             return response.choices[0].message.content
         except Exception as exc:
             if attempt == retries - 1:
