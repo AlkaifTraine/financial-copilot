@@ -173,7 +173,7 @@
     </div>
     <div class="fc-rating {{ r.rating_tone }}">
       <div class="label">{{ r.rating }}</div>
-      <div class="sub">{{ 'Blended' if r.blended else 'DCF-derived' }}</div>
+      <div class="sub">Intrinsic DCF</div>
     </div>
   </div>
 
@@ -456,25 +456,24 @@
   {% endif %}
   {% endif %}
 
-  {# ---- valuation triangulation ---- #}
+  {# ---- valuation summary (intrinsic DCF is the target; the rest are cross-checks) ---- #}
   {% if r.blended and r.blended.estimates|length > 1 %}
-  <h2 class="fc-h">How We Reach the Number</h2>
+  <h2 class="fc-h">Valuation Summary</h2>
   <p style="font-size:12.5px;color:var(--ink-2);">
-    Our target price is derived from OUR OWN methods — the intrinsic DCF, the
-    probability-weighted scenario value, and a comparable-companies read — each weighted by
-    the confidence it earns. The Wall Street consensus is shown alongside as an
-    <strong>external market reference</strong>, not blended into our number: it is what the
-    market believes, the counter-view our thesis is weighed against, not an input to our
-    intrinsic target.
+    The target price is our <strong>intrinsic DCF (base case)</strong>. The scenario expected
+    value, the comparable-companies value and the Wall Street consensus are shown as independent
+    <strong>cross-checks</strong>, not blended into the target: the scenario set is built from the
+    same DCF (so blending would double-count it), a peer multiple is a different valuation basis,
+    and the consensus is the market's external view.
   </p>
   <div class="fc-scroll"><table class="fc-t">
-    <thead><tr><th>Source</th><th>Value / share</th><th>Weight</th><th>Detail</th><th>Link</th></tr></thead>
+    <thead><tr><th>Method</th><th>Value / share</th><th style="text-align:left;">Role</th><th>Detail</th><th>Link</th></tr></thead>
     <tbody>
     {% for e in r.blended.estimates %}
       <tr{% if not e.included %} style="color:var(--muted);"{% endif %}>
         <td>{{ e.label }}</td>
-        <td>{{ fmt_price(e.value_per_share) }}{% if not e.included %} (excluded){% endif %}</td>
-        <td>{{ '%.1f'|format(e.weight) }}</td>
+        <td>{{ fmt_price(e.value_per_share) }}</td>
+        <td style="text-align:left;white-space:nowrap;">{% if e.key == 'dcf' %}Target (intrinsic){% elif e.key == 'analyst_consensus' %}External reference{% else %}Cross-check{% endif %}</td>
         <td>{{ e.detail or e.source_name }}</td>
         <td>{% if e.url %}<a href="{{ e.url }}">source</a>{% else %}&ndash;{% endif %}</td>
       </tr>
@@ -482,9 +481,9 @@
     </tbody>
   </table></div>
   <p style="font-size:13px;margin-top:10px;">
-    <strong>Blended fair value {{ fmt_price(r.blended.blended_value) }}</strong>{% if r.blended.upside is not none %}
+    <strong>Target price (intrinsic DCF) {{ fmt_price(r.blended.blended_value) }}</strong>{% if r.blended.upside is not none %}
     ({{ '%+.1f'|format(r.blended.upside * 100) }}% vs price){% endif %}.
-    Reconciled from {{ fmt_price(r.blended.low) }} to {{ fmt_price(r.blended.high) }} across sources.
+    The cross-checks are shown above for triangulation; they are not averaged into the target.
   </p>
   {% endif %}
 
@@ -686,6 +685,9 @@
   {% for n in r.comps.notes %}<div class="fc-evidence">{{ n }}</div>{% endfor %}
   {% endif %}
 
+  <p style="font-size:12.5px;margin-top:14px;"><strong>QA STATUS: {{ r.qa_status }}</strong>
+    {% if r.qa_status == 'PASSED' %}<span style="color:var(--muted);"> — no critical issues; the notes below are non-blocking.</span>{% endif %}
+  </p>
   {% if r.warnings %}
   <h2 class="fc-h">Model Notes and Limitations</h2>
   <ul class="fc-bullets">{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>

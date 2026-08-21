@@ -154,14 +154,17 @@ class TestBuildBlend:
         assert analyst.weight == 0.0
         assert "external market reference" in analyst.exclude_reason.lower()
 
-    def test_scenario_value_blends_with_dcf(self):
-        # Our own scenario value IS an intrinsic input and is blended.
+    def test_scenario_value_is_a_cross_check_not_blended(self):
+        # The scenario expected value is built FROM the DCF (base = DCF), so it is a
+        # cross-check, NOT blended — the target stays the intrinsic DCF (no double count).
         h = _history(share_price=150.0)
         result = build_blend(dcf_value=50.0, history=h, ticker="TEST",
                              share_price=150.0, currency="USD", scenario_value=70.0)
         assert {e.key for e in result.estimates} == {"dcf", "scenario"}
-        # Weighted average of 50 (w=1.0) and 70 (w=0.8): (50 + 56)/1.8 ≈ 58.9
-        assert 50.0 < result.blended_value < 70.0
+        assert result.blended_value == pytest.approx(50.0)          # target = intrinsic DCF
+        scenario = next(e for e in result.estimates if e.key == "scenario")
+        assert scenario.included is False and scenario.weight == 0.0
+        assert "double-count" in scenario.exclude_reason.lower()
 
     def test_degrades_to_dcf_without_coverage(self):
         h = _history(share_price=150.0)  # no analyst targets
@@ -176,11 +179,15 @@ class TestBuildBlend:
         assert result.blended_value == 0.0
         assert result.estimates == []
 
-    def test_comps_included_when_supplied(self):
+    def test_comps_shown_as_cross_check_not_blended(self):
         h = _history(analyst_target_median=200.0, analyst_opinion_count=40)
         result = build_blend(dcf_value=50.0, history=h, ticker="TEST",
                              share_price=None, currency="USD", comps_value=120.0)
         assert {e.key for e in result.estimates} == {"dcf", "analyst_consensus", "comps"}
+        # Comps is a market-based cross-check: present, but not blended into the target.
+        comps = next(e for e in result.estimates if e.key == "comps")
+        assert comps.included is False and comps.weight == 0.0
+        assert result.blended_value == pytest.approx(50.0)          # target = intrinsic DCF
 
 
 class TestDeterminism:

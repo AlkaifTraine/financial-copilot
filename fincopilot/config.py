@@ -435,16 +435,19 @@ SCENARIO_MAX_MARGIN_SPREAD = 0.12      # at most +/-12pp
 # several independent methods disagree. Every source, its value and its weight
 # are shown, so the blend is auditable rather than a black box.
 
-# Base weight for each source *type*. The model (our DCF) is one independent
-# voice; the analyst-consensus weight is scaled separately by how many analysts
-# stand behind it (below), because a target followed by sixty analysts deserves
-# more confidence than one followed by three. Comps and web sources are wired
-# for later use and weighted lower, reflecting their looser link to value.
+# Base weight for each source *type*. Only the DCF carries weight in the target:
+# the target price IS the intrinsic DCF (base case). The scenario expected value,
+# the comps value and the analyst consensus are shown as independent CROSS-CHECKS
+# and are forced to weight 0 in build_blend — the scenario set is built from the
+# same DCF (its base case is the DCF), so blending it back in would double-count
+# the one framework, and a peer multiple is a different valuation basis. The
+# non-model weights below are retained only for reference/experiments; build_blend
+# does not read them for scenario/comps.
 BLEND_SOURCE_WEIGHTS = {
-    "model": 1.0,       # our DCF
-    "scenario": 0.8,    # probability-weighted scenario value (our own)
-    "analyst": 1.0,     # per-unit weight, then scaled by analyst count
-    "comps": 0.7,
+    "model": 1.0,       # our DCF — the intrinsic target
+    "scenario": 0.0,    # cross-check only (built FROM the DCF; blending double-counts)
+    "analyst": 1.0,     # per-unit weight, then scaled by analyst count (external ref)
+    "comps": 0.0,       # market-based cross-check only, not blended into intrinsic value
     "web": 0.4,
 }
 

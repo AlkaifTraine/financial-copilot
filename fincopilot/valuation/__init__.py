@@ -301,8 +301,8 @@ def value_company(
                     f"The analyst consensus ({history.currency} "
                     f"{consensus.value_per_share:,.2f}) sits {abs(gap) * 100:.0f}% "
                     f"{direction} our intrinsic DCF ({history.currency} "
-                    f"{valuation.dcf.fair_value_per_share:,.2f}). The blended value "
-                    f"reconciles the two; read it as a triangulation, not a precise number."
+                    f"{valuation.dcf.fair_value_per_share:,.2f}). The consensus is an external "
+                    f"cross-check, not blended into our target — the gap is the contrarian call."
                 )
 
     # -- diagnostics (scenarios) ------------------------------------------

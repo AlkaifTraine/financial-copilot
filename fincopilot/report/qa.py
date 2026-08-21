@@ -443,41 +443,109 @@ def check_consensus_scenario(report) -> list[str]:
     return issues
 
 
-def run_qa(report) -> list[str]:
-    """Run every QA pass; classify findings; set the publication gate.
+def check_valuation_integrity(report) -> list[str]:
+    """Deterministic guard against valuation double-counting (item #1).
 
-    Critical failures — a dead or missing citation on a claim-heavy section, or a
-    section figure that contradicts a canonical metric — block publication. Softer
-    findings are surfaced in the report's limitations. All findings, blocking or
-    not, are also listed under limitations so nothing is hidden.
+    The target price must equal the intrinsic DCF — the scenario/comps/consensus are
+    cross-checks, never blended in. And the scenario BASE case must equal the DCF,
+    since the scenario set is built from it. A divergence means the frameworks were
+    combined or drifted apart, which is disqualifying.
     """
-    citation = audit_citations(report)
-    consistency = check_consistency(report)
-    metric = check_metric_consistency(report)
-    direction = check_risk_direction(report)
-    semantics = check_metric_semantics(report)
+    issues: list[str] = []
+    dcf = report.dcf_fair_value or report.fair_value
+    blended = report.blended or {}
+    target = blended.get("blended_value")
+    if dcf and dcf > 0 and target and abs(target / dcf - 1) > 0.005:
+        issues.append(
+            f"Valuation double-counting: the target price ({target:,.2f}) is not the intrinsic "
+            f"DCF ({dcf:,.2f}). The DCF, scenario expected value and comps must be reported "
+            f"separately, not blended into a single averaged number."
+        )
+    cases = (report.scenarios or {}).get("cases", [])
+    base = next((c for c in cases if c.get("key") == "base"), None)
+    if base and dcf and dcf > 0:
+        base_fv = base.get("fair_value_per_share")
+        if base_fv and abs(base_fv / dcf - 1) > 0.02:
+            issues.append(
+                f"Scenario base case ({base_fv:,.2f}) does not match the DCF ({dcf:,.2f}); the "
+                f"scenario framework must be built on the base-case DCF."
+            )
+    return issues
 
-    # Precise, low-false-positive checks BLOCK: a citation failure on a claim-heavy
-    # section, or a figure that contradicts itself or a canonical value. These are
-    # numeric/structural facts, not judgement calls.
-    blocking = citation + consistency + metric
 
-    # Directional, period/comparison and financial-type-safety checks are regex
-    # heuristics over prose: they catch real errors but can misread benign phrasing,
-    # so they are ADVISORY — surfaced in the report's QA notes for the reader to
-    # weigh, never a hard gate that withholds the report.
-    advisory = (
-        direction + semantics
-        + check_segment_end_market(report)
-        + check_quarterly_annualization(report)
-        + check_forward_period_staleness(report)
-        + check_consensus_scenario(report)
-    )
+def check_segment_reconciliation(report) -> list[str]:
+    """Deterministic: reported segment revenues must sum to consolidated revenue."""
+    seg = report.segment_forecast or {}
+    gap = seg.get("reconciliation_gap")
+    if not seg.get("segments") or gap is None:
+        return []
+    if abs(gap) > 0.15:                      # a genuine sum mismatch, not extraction noise
+        seg_sum = seg.get("latest_segment_sum", 0.0) or 0.0
+        total = seg.get("latest_total_revenue", 0.0) or 0.0
+        return [
+            f"Segment revenues sum to {seg_sum / 1e9:,.1f}bn but consolidated revenue is "
+            f"{total / 1e9:,.1f}bn — a {gap * 100:+.0f}% reconciliation gap; the segment set is "
+            f"incomplete or mis-extracted."
+        ]
+    return []
 
-    for issue in blocking + advisory:
-        log.info("QA: %s", issue)
-        report.warnings.append(f"Automated QA flagged: {issue}")
 
-    report.blocking_issues = blocking
-    report.blocked = bool(blocking)
-    return blocking + advisory
+# Severity of each check. CRITICAL blocks publication (QA FAILED); HIGH/MEDIUM/LOW
+# are delivered with the report as warnings of decreasing urgency. Only deterministic,
+# high-confidence checks are CRITICAL — a regex-over-prose heuristic can misread benign
+# language, and must never deny a correct report, so those are capped at HIGH.
+CHECK_SEVERITY = {
+    "consistency": "CRITICAL",              # probabilities sum, scenario order, rating sign
+    "canonical_metric": "CRITICAL",         # a figure contradicting a canonical value
+    "valuation_integrity": "CRITICAL",      # double-counting / base-case != DCF
+    "segment_reconciliation": "CRITICAL",   # segments don't sum to consolidated revenue
+    "citation": "HIGH",                     # grounding failure on a claim-heavy section
+    "risk_direction": "HIGH",               # a downside risk that improves its metric
+    "quarterly_annualization": "HIGH",      # a quarter annualized as annual
+    "consensus_scenario": "HIGH",           # our probability pinned on external consensus
+    "segment_end_market": "HIGH",           # segment % conflated with end-market %
+    "metric_semantics": "MEDIUM",           # a quarterly label on an annual figure
+    "forward_period": "MEDIUM",             # a forward trigger keyed to a past year
+}
+_SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+
+
+def run_qa(report) -> list[dict]:
+    """Run every QA pass, tag each finding with a severity, and set the publication gate.
+
+    CRITICAL findings block publication (report.qa_status = "FAILED", report.blocked =
+    True) — they are deterministic contradictions a research report must never ship.
+    HIGH/MEDIUM/LOW are delivered with the report as warnings the reader can weigh.
+    Returns the findings as ``{severity, check, message}`` dicts, most severe first.
+    """
+    results = {
+        "consistency": check_consistency(report),
+        "canonical_metric": check_metric_consistency(report),
+        "valuation_integrity": check_valuation_integrity(report),
+        "segment_reconciliation": check_segment_reconciliation(report),
+        "citation": audit_citations(report),
+        "risk_direction": check_risk_direction(report),
+        "quarterly_annualization": check_quarterly_annualization(report),
+        "consensus_scenario": check_consensus_scenario(report),
+        "segment_end_market": check_segment_end_market(report),
+        "metric_semantics": check_metric_semantics(report),
+        "forward_period": check_forward_period_staleness(report),
+    }
+
+    findings: list[dict] = []
+    for check_name, issues in results.items():
+        severity = CHECK_SEVERITY.get(check_name, "MEDIUM")
+        for message in issues:
+            findings.append({"severity": severity, "check": check_name, "message": message})
+    findings.sort(key=lambda f: _SEVERITY_ORDER[f["severity"]])
+
+    for finding in findings:
+        log.info("QA [%s] %s", finding["severity"], finding["message"])
+        report.warnings.append(f"[{finding['severity']}] QA — {finding['message']}")
+
+    critical = [f["message"] for f in findings if f["severity"] == "CRITICAL"]
+    report.qa_findings = findings
+    report.blocking_issues = critical
+    report.blocked = bool(critical)
+    report.qa_status = "FAILED" if critical else "PASSED"
+    return findings

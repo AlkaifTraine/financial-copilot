@@ -93,14 +93,16 @@ SPECS: list[SectionSpec] = [
     # retrieval query it used lives on there now.
     SectionSpec(
         key="outlook",
-        title="Outlook",
+        title="Outlook & Capital Allocation",
         query=(
             "outlook guidance next quarter next fiscal year expectations "
             "capital allocation dividend buyback capital expenditure plans"
         ),
         brief=(
-            "Management's stated expectations and capital allocation plans. Be "
-            "explicit about what is guidance versus inference."
+            "Management's stated forward expectations AND capital allocation (buybacks, "
+            "dividends, capex). Name the title's two halves accurately: if the content is "
+            "almost entirely capital allocation, say so. Be explicit about what is guidance "
+            "versus inference, and state the period of every guidance figure."
         ),
         bullet_label="What to watch",
     ),

@@ -176,14 +176,21 @@ def build_blend(
     comps_value: float | None = None,
     scenario_value: float | None = None,
 ) -> BlendedValuation:
-    """Assemble OUR valuation methods into one target; show consensus alongside.
+    """Assemble the valuation summary: intrinsic DCF as the target, the rest as cross-checks.
 
-    Our target price is derived from our own framework — the intrinsic DCF, the
-    probability-weighted scenario value, and a comps-implied value where one
-    exists. The Wall Street consensus is added as an EXTERNAL market reference:
-    shown for comparison, but not blended into the number (unless
-    ``BLEND_INCLUDE_CONSENSUS`` is set), so the target stays an intrinsic view
-    rather than a mostly-market one.
+    The target price is the INTRINSIC DCF (base case) — a single, primary intrinsic
+    opinion. Three other lenses are shown ALONGSIDE it as independent cross-checks,
+    never blended into the number:
+
+    * the probability-weighted SCENARIO expected value — which is built FROM the same
+      DCF (its base case *is* the DCF), so folding it back in would double-count the
+      one framework;
+    * the COMPARABLE-COMPANY value — a market-based cross-check, a different denominator
+      than an intrinsic DCF;
+    * the analyst CONSENSUS — an external market reference.
+
+    Each is recorded as an excluded estimate with its reason, so the summary table is a
+    genuine triangulation the reader can audit, not an arbitrary weighted mush.
     """
     estimates: list[ValuationEstimate] = []
 
@@ -191,47 +198,57 @@ def build_blend(
         estimates.append(
             ValuationEstimate(
                 key="dcf",
-                label="Intrinsic DCF",
+                label="Intrinsic DCF (base case)",
                 source_type="model",
                 value_per_share=dcf_value,
                 weight=config.BLEND_SOURCE_WEIGHTS["model"],
                 currency=currency,
                 source_name="Financial Copilot DCF",
-                detail="Discounted free cash flow on audited figures; this model's own estimate",
+                detail="Discounted free cash flow on audited figures — the primary intrinsic "
+                       "value and the target price",
             )
         )
 
+    # Scenario expected value: a CROSS-CHECK, weight 0, never blended. Its base case
+    # is the DCF itself, so blending it with the DCF would double-count the framework.
     if scenario_value and scenario_value > 0:
-        estimates.append(
-            ValuationEstimate(
-                key="scenario",
-                label="Scenario expected value",
-                source_type="model",
-                value_per_share=scenario_value,
-                weight=config.BLEND_SOURCE_WEIGHTS["scenario"],
-                currency=currency,
-                source_name="Probability-weighted bear/base/bull",
-                detail="Our own scenario set, weighted by analyst-assigned probabilities",
-            )
+        scenario = ValuationEstimate(
+            key="scenario",
+            label="Scenario expected value",
+            source_type="model",
+            value_per_share=scenario_value,
+            weight=0.0,
+            currency=currency,
+            source_name="Probability-weighted bear/base/bull",
+            detail="Cross-check on dispersion — built from the same DCF (base case = DCF)",
         )
+        scenario.included = False
+        scenario.exclude_reason = (
+            "Derived from the same DCF (base case = DCF); shown as a scenario cross-check, "
+            "not blended into the target — folding it in would double-count the DCF"
+        )
+        estimates.append(scenario)
 
+    # Comparable companies: a market-based CROSS-CHECK, weight 0, not auto-blended
+    # into the intrinsic target (a peer multiple is a different valuation basis).
     if comps_value and comps_value > 0:
-        estimates.append(
-            ValuationEstimate(
-                key="comps",
-                label="Comparable companies",
-                source_type="comps",
-                value_per_share=comps_value,
-                weight=config.BLEND_SOURCE_WEIGHTS["comps"],
-                currency=currency,
-                source_name="Peer median multiple",
-                detail="Peer median P/E applied to trailing EPS",
-            )
+        comps = ValuationEstimate(
+            key="comps",
+            label="Comparable companies",
+            source_type="comps",
+            value_per_share=comps_value,
+            weight=0.0,
+            currency=currency,
+            source_name="Peer median multiple",
+            detail="Market-based cross-check — peer median multiple, a different basis than the DCF",
         )
+        comps.included = False
+        comps.exclude_reason = (
+            "Market-based cross-check — shown alongside the intrinsic DCF, not blended into it"
+        )
+        estimates.append(comps)
 
-    # The analyst consensus is added for display but, by default, carries no
-    # weight in our target — it is the market's view, shown next to ours, not an
-    # input to it. Recorded as excluded with a plain reason so the table is clear.
+    # The analyst consensus is an EXTERNAL market reference, weight 0 by default.
     analyst = build_analyst_estimate(history, ticker, currency)
     if analyst is not None:
         if not config.BLEND_INCLUDE_CONSENSUS:
@@ -243,4 +260,12 @@ def build_blend(
             )
         estimates.append(analyst)
 
-    return blend_estimates(estimates, share_price=share_price, currency=currency)
+    result = blend_estimates(estimates, share_price=share_price, currency=currency)
+    if any(e.key == "dcf" for e in estimates):
+        result.method = (
+            "Target price = intrinsic DCF (base case). Scenario expected value, comparable "
+            "companies and the analyst consensus are shown as independent cross-checks, not "
+            "blended: the scenario set is built from the same DCF, so combining them would "
+            "double-count it."
+        )
+    return result

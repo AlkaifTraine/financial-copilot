@@ -17,6 +17,8 @@ from fincopilot.report.qa import (
     check_quarterly_annualization,
     check_risk_direction,
     check_segment_end_market,
+    check_segment_reconciliation,
+    check_valuation_integrity,
     run_qa,
 )
 
@@ -116,10 +118,11 @@ class TestRunQa:
         report.rating = "SELL"
         report.upside = 0.40            # SELL with big upside — a contradiction
         before = len(report.warnings)
-        issues = run_qa(report)
-        assert issues
-        assert len(report.warnings) == before + len(issues)
-        assert all(w.startswith("Automated QA flagged:") for w in report.warnings[before:])
+        findings = run_qa(report)
+        assert findings
+        assert all(isinstance(f, dict) and "severity" in f for f in findings)
+        assert len(report.warnings) == before + len(findings)
+        assert all(w.startswith("[") and "QA — " in w for w in report.warnings[before:])
 
 
 class TestMetricGate:
@@ -199,9 +202,10 @@ class TestRiskDirection:
                              "toward market-implied 25.3%."
         )
         findings = run_qa(report)
-        assert report.blocked is False                                    # advisory, not a gate
-        assert any("directional" in f.lower() for f in findings)          # still surfaced
-        assert any("directional" in w.lower() for w in report.warnings)   # and in the QA notes
+        assert report.blocked is False                                        # advisory, not a gate
+        assert any(f["severity"] == "HIGH" and "directional" in f["message"].lower()
+                   for f in findings)                                          # surfaced as HIGH
+        assert any("directional" in w.lower() for w in report.warnings)       # and in the QA notes
 
 
 class TestMetricSemantics:
@@ -299,3 +303,71 @@ class TestFinancialTypeSafety:
         )
         run_qa(report)
         assert report.blocked is False   # advisory only, never blocks
+
+
+class TestQaSeverityGate:
+    """CRITICAL findings block (QA FAILED); softer findings deliver (QA PASSED)."""
+
+    def _valued(self, dcf=79.07, target=None, base_fv=None):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.dcf_fair_value = dcf
+        report.fair_value = dcf
+        if target is not None:
+            report.blended = {"blended_value": target}
+        if base_fv is not None:
+            report.scenarios = {"cases": [
+                {"key": "bear", "fair_value_per_share": 35.0, "probability": 0.25},
+                {"key": "base", "fair_value_per_share": base_fv, "probability": 0.50},
+                {"key": "bull", "fair_value_per_share": 190.0, "probability": 0.25},
+            ]}
+        return report
+
+    def test_double_counted_target_is_critical(self):
+        # Target (blended) != intrinsic DCF -> double-counting -> CRITICAL, blocks.
+        report = self._valued(dcf=79.07, target=95.83)
+        run_qa(report)
+        assert report.qa_status == "FAILED" and report.blocked is True
+        assert any("double-counting" in i.lower() for i in report.blocking_issues)
+
+    def test_target_equal_to_dcf_passes(self):
+        report = self._valued(dcf=79.07, target=79.07, base_fv=79.07)
+        run_qa(report)
+        assert report.qa_status == "PASSED" and report.blocked is False
+
+    def test_valuation_integrity_direct(self):
+        assert check_valuation_integrity(self._valued(dcf=79.07, target=79.07)) == []
+        assert check_valuation_integrity(self._valued(dcf=79.07, target=95.83))
+
+    def test_scenario_base_must_match_dcf(self):
+        report = self._valued(dcf=79.07, target=79.07, base_fv=120.0)   # base != DCF
+        run_qa(report)
+        assert report.blocked is True
+
+    def test_segment_non_reconciliation_is_critical(self):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.segment_forecast = {
+            "segments": [{"name": "A"}, {"name": "B"}],
+            "reconciliation_gap": -0.30,          # 30% short of consolidated
+            "latest_segment_sum": 150e9, "latest_total_revenue": 215e9,
+        }
+        assert check_segment_reconciliation(report)
+        run_qa(report)
+        assert report.blocked is True and report.qa_status == "FAILED"
+
+    def test_small_segment_gap_is_not_critical(self):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.segment_forecast = {
+            "segments": [{"name": "A"}], "reconciliation_gap": 0.04,
+            "latest_segment_sum": 207e9, "latest_total_revenue": 215e9,
+        }
+        assert check_segment_reconciliation(report) == []
+
+    def test_probabilities_not_summing_blocks(self):
+        report = ReportModel(company_name="X", ticker="X")
+        report.scenarios = {"cases": [
+            {"key": "bear", "fair_value_per_share": 80.0, "probability": 0.25},
+            {"key": "base", "fair_value_per_share": 120.0, "probability": 0.30},
+            {"key": "bull", "fair_value_per_share": 160.0, "probability": 0.25},
+        ]}
+        run_qa(report)
+        assert report.blocked is True and report.qa_status == "FAILED"

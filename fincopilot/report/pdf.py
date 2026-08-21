@@ -614,44 +614,42 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
     if report.blended and len(report.blended.get("estimates", [])) > 1:
         bl = report.blended
         story.append(PageBreak())
-        story.append(Paragraph("HOW WE REACH THE NUMBER", styles["h2"]))
+        story.append(Paragraph("VALUATION SUMMARY", styles["h2"]))
         story.append(Paragraph(
-            "Our target price is derived from OUR OWN methods — the intrinsic DCF, the "
-            "probability-weighted scenario value, and a comparable-companies read. The Wall "
-            "Street consensus is shown alongside as an <b>external market reference</b>, not "
-            "blended into our number: it is what the market believes, weighed against our "
-            "view, not an input to our intrinsic target.",
+            "The target price is our <b>intrinsic DCF (base case)</b>. The scenario expected "
+            "value, the comparable-companies value and the Wall Street consensus are shown as "
+            "independent <b>cross-checks</b>, not blended into the target: the scenario set is "
+            "built from the same DCF (blending would double-count it), a peer multiple is a "
+            "different valuation basis, and the consensus is the market's external view.",
             styles["small"],
         ))
         story.append(Spacer(1, 4))
 
-        rows = [["Source", "Value / share", "Weight", "Detail"]]
+        def _role(est: dict) -> str:
+            if est.get("key") == "dcf":
+                return "Target (intrinsic)"
+            if est.get("key") == "analyst_consensus":
+                return "External reference"
+            return "Cross-check"
+
+        rows = [["Method", "Value / share", "Role", "Detail"]]
         for est in bl["estimates"]:
-            value_text = f"{currency} {est['value_per_share']:,.2f}"
-            if not est["included"]:
-                value_text += " (excluded)"
             rows.append([
-                est["label"], value_text, f"{est['weight']:.1f}",
+                est["label"], f"{currency} {est['value_per_share']:,.2f}", _role(est),
                 est.get("detail") or est.get("source_name") or "",
             ])
-        widths = [CONTENT_WIDTH * w for w in (0.22, 0.20, 0.10, 0.48)]
+        widths = [CONTENT_WIDTH * w for w in (0.22, 0.18, 0.16, 0.44)]
         table = _table(rows, widths, styles)
         table.setStyle(TableStyle([("ALIGN", (3, 0), (-1, -1), "LEFT")]))
         story.append(table)
 
-        range_text = ""
-        if bl.get("low") is not None and bl.get("high") is not None:
-            range_text = (
-                f" Reconciled from {currency} {bl['low']:,.2f} to "
-                f"{currency} {bl['high']:,.2f} across sources."
-            )
         upside_text = (
             f" ({bl['upside'] * 100:+.1f}% vs price)"
             if bl.get("upside") is not None else ""
         )
         story.append(Paragraph(
-            f"<b>Blended fair value {currency} {bl['blended_value']:,.2f}{upside_text}.</b>"
-            f"{range_text}",
+            f"<b>Target price (intrinsic DCF) {currency} {bl['blended_value']:,.2f}{upside_text}.</b> "
+            f"The cross-checks above are shown for triangulation; they are not averaged into the target.",
             styles["small"],
         ))
 
@@ -863,7 +861,12 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         for note in report.comps.get("notes", []):
             story.append(Paragraph(note, styles["small"]))
 
-    # -- limitations ------------------------------------------------------
+    # -- QA status + limitations ------------------------------------------
+    status_note = (
+        " — no critical issues; the notes below are non-blocking."
+        if report.qa_status == "PASSED" else ""
+    )
+    story.append(Paragraph(f"<b>QA STATUS: {report.qa_status}</b>{status_note}", styles["small"]))
     if report.warnings:
         story.append(Paragraph("MODEL NOTES AND LIMITATIONS", styles["h2"]))
         story.append(ListFlowable(

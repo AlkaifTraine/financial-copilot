@@ -714,14 +714,25 @@ with report_tab:
 
     report = st.session_state["report"]
     if report and getattr(report, "blocked", False):
-        st.warning(
-            "**Automated QA flagged one or more issues in this report.** The report is still "
-            "available below — review these points before relying on it. Regenerating often "
-            "clears a transient flag (a stochastic phrasing, a momentarily missing citation)."
+        # CRITICAL findings fail the publication gate: no polished report is offered,
+        # a diagnostic is shown instead, and the issues must be fixed (regenerate).
+        st.error("**QA FAILED** — the report has unresolved CRITICAL issues and was not published.")
+        st.markdown("**Critical issues:**")
+        for i, issue in enumerate(report.blocking_issues, 1):
+            st.markdown(f"{i}. {issue}")
+        st.info(
+            "These are deterministic integrity failures (a numeric contradiction, a valuation "
+            "double-count, or a segment/probability mismatch). Regenerate to retry."
         )
-        for issue in report.blocking_issues:
-            st.markdown(f"- {issue}")
-        # The report is still delivered: a flag is a caution to weigh, not a locked door.
+        report = None   # withhold the polished report until CRITICAL issues clear
+    elif report:
+        # No CRITICAL issue: the gate passed. Show status and any softer findings.
+        st.success("**QA STATUS: PASSED** — no critical issues.")
+        soft = [f for f in getattr(report, "qa_findings", []) if f.get("severity") != "CRITICAL"]
+        if soft:
+            with st.expander(f"QA notes ({len(soft)} non-blocking)"):
+                for f in soft:
+                    st.markdown(f"- **[{f['severity']}]** {f['message']}")
 
     if report:
         config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
