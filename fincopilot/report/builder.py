@@ -546,4 +546,9 @@ def build_report(
         # Risks/rating may have changed during correction; refresh the disclosures block.
         report.disclosures = _disclosures(report, valuation)
 
+    # Reliability scorecard — computed last, over the final (post-correction) report,
+    # so the website can show the reader how far to trust it.
+    from .reliability import compute_reliability
+    report.reliability = compute_reliability(report)
+
     return report

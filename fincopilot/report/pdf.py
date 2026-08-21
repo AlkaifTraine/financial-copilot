@@ -938,6 +938,16 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         if report.qa_status == "PASSED" else ""
     )
     story.append(Paragraph(f"<b>QA STATUS: {report.qa_status}</b>{status_note}", styles["small"]))
+    rel = report.reliability
+    if rel:
+        story.append(Paragraph(
+            f"<b>Reliability: {rel['grade']} ({rel['score']}/100) — {rel['label']}.</b> "
+            f"{rel['unverified_figures_pct']}% of narrative figures unverified "
+            f"({rel['figures_traced']}/{rel['figures_checked']} traced to the model or a cited "
+            f"source), {rel['citation_coverage_pct']}% citation coverage. \"Unverified\" flags "
+            f"figures we could not auto-trace — a prompt to verify, not proof of error.",
+            styles["small"],
+        ))
     if report.warnings:
         story.append(Paragraph("MODEL NOTES AND LIMITATIONS", styles["h2"]))
         story.append(ListFlowable(

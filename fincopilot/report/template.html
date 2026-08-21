@@ -742,6 +742,14 @@
   <p style="font-size:12.5px;margin-top:14px;"><strong>QA STATUS: {{ r.qa_status }}</strong>
     {% if r.qa_status == 'PASSED' %}<span style="color:var(--muted);"> — no critical issues; the notes below are non-blocking.</span>{% endif %}
   </p>
+  {% if r.reliability %}
+  <p style="font-size:12.5px;margin-top:2px;"><strong>Reliability: {{ r.reliability.grade }} ({{ r.reliability.score }}/100) — {{ r.reliability.label }}.</strong>
+    <span style="color:var(--muted);">{{ r.reliability.unverified_figures_pct }}% of narrative figures unverified
+    ({{ r.reliability.figures_traced }}/{{ r.reliability.figures_checked }} traced to the model or a cited source),
+    {{ r.reliability.citation_coverage_pct }}% citation coverage. "Unverified" flags figures we could not auto-trace —
+    a prompt to verify, not proof of error.</span>
+  </p>
+  {% endif %}
   {% if r.warnings %}
   <h2 class="fc-h">Model Notes and Limitations</h2>
   <ul class="fc-bullets">{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>

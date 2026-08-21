@@ -65,6 +65,35 @@ for key, default in _DEFAULTS.items():
     st.session_state.setdefault(key, default)
 
 
+def _render_reliability(report) -> None:
+    """Show the post-generation reliability scorecard: how far to trust this report."""
+    r = getattr(report, "reliability", None) or {}
+    if not r:
+        return
+    grade_tone = {"A": "🟢", "B": "🟢", "C": "🟠", "D": "🔴"}.get(r["grade"], "⚪")
+    st.markdown(f"### {grade_tone} Reliability {r['grade']} — {r['label']} ({r['score']}/100)")
+    cols = st.columns(4)
+    cols[0].metric(
+        "Unverified figures", f"{r['unverified_figures_pct']}%",
+        help=("The 'hallucination' check: share of figures in the narrative that do NOT match "
+              "the deterministic model OR the cited source text. Lower is better. "
+              f"{r['figures_traced']}/{r['figures_checked']} figures traced."),
+    )
+    cols[1].metric("Citation coverage", f"{r['citation_coverage_pct']}%",
+                   help="Share of narrative paragraphs carrying an inline [n] source citation.")
+    cols[2].metric("Source freshness", f"{r['source_freshness_pct']}%",
+                   help="Share of cited sources filed within ~18 months (Current/Recent).")
+    cols[3].metric("Valuation confidence", r["valuation_confidence"],
+                   help="Derived from scenario dispersion, terminal-value dependence, DCF-vs-comps gap.")
+    findings = r.get("qa_findings") or {}
+    qa_line = ", ".join(f"{n}× {sev}" for sev, n in findings.items()) or "no findings"
+    st.caption(
+        f"QA: **{r['qa_status']}** ({qa_line}). "
+        f"'Unverified figures' flags numbers we could not auto-trace — a caution to verify, "
+        f"not proof of error. A blocked report (any CRITICAL/HIGH) is never published."
+    )
+
+
 def reset_company_state() -> None:
     """Clear everything derived from the previously loaded company.
 
@@ -739,6 +768,8 @@ with report_tab:
             with st.expander(f"QA notes ({len(soft)} non-blocking)"):
                 for f in soft:
                     st.markdown(f"- **[{f['severity']}]** {f['message']}")
+
+        _render_reliability(report)
 
     if report:
         config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)

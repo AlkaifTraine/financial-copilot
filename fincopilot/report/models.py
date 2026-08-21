@@ -137,6 +137,9 @@ class ReportModel:
     # Institutional research apparatus: 12-month price target, rating definitions,
     # valuation methodology, risks to the target, certification, data disclosures.
     disclosures: dict = field(default_factory=dict)
+    # Post-generation reliability scorecard (report/reliability.py): overall score/grade,
+    # unverified-figure rate ("hallucination" proxy), citation coverage, QA, freshness.
+    reliability: dict = field(default_factory=dict)
 
     # Canonical metric identities (report/metrics.py), used by the QA gate to
     # check that no section contradicts an authoritative figure.
