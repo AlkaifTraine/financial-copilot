@@ -22,12 +22,14 @@ SOURCE_HISTORICAL = "historical"   # computed from the company's own filings
 SOURCE_MARKET = "market"           # live market data (price, beta, yields)
 SOURCE_MODEL = "model"             # proposed by the language model, then bounded
 SOURCE_DEFAULT = "default"         # configured fallback; nothing better available
+SOURCE_ANALYST = "analyst"         # set by a human analyst; overrides the model
 
 SOURCE_LABELS = {
     SOURCE_HISTORICAL: "Derived from filings",
     SOURCE_MARKET: "Live market data",
     SOURCE_MODEL: "Model estimate (bounded)",
     SOURCE_DEFAULT: "Standard default",
+    SOURCE_ANALYST: "Analyst input",
 }
 
 
@@ -552,6 +554,9 @@ class Valuation:
     comps: CompsResult | None = None
     blended: BlendedValuation | None = None
     assumptions: AssumptionLedger = field(default_factory=AssumptionLedger)
+    # Assumption keys a human analyst pinned (source=analyst) — empty for a pure
+    # model run. When present, the report flags the valuation as analyst-adjusted.
+    analyst_overrides: list = field(default_factory=list)
 
     share_price: float | None = None
 

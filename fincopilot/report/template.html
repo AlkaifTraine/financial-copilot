@@ -173,7 +173,7 @@
     </div>
     <div class="fc-rating {{ r.rating_tone }}">
       <div class="label">{{ r.rating }}</div>
-      <div class="sub">Intrinsic DCF{% if r.valuation_confidence %} · {{ r.valuation_confidence }} confidence{% endif %}</div>
+      <div class="sub">{% if r.analyst_overrides %}Analyst-adjusted DCF{% else %}Intrinsic DCF{% endif %}{% if r.valuation_confidence %} · {{ r.valuation_confidence }} confidence{% endif %}</div>
     </div>
   </div>
 

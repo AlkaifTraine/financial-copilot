@@ -65,8 +65,9 @@ INDEX_DIR = ROOT_DIR / "vector_db"    # FAISS + BM25 indexes, per company
 REPORTS_DIR = ROOT_DIR / "reports"    # generated equity research reports
 CHARTS_DIR = ROOT_DIR / "charts"      # chart images embedded into reports
 CACHE_DIR = ROOT_DIR / ".cache"       # HTTP + embedding caches
+OVERRIDES_DIR = ROOT_DIR / "overrides"  # analyst assumption overrides, per company
 
-for _d in (DATA_DIR, INDEX_DIR, REPORTS_DIR, CHARTS_DIR, CACHE_DIR):
+for _d in (DATA_DIR, INDEX_DIR, REPORTS_DIR, CHARTS_DIR, CACHE_DIR, OVERRIDES_DIR):
     _d.mkdir(parents=True, exist_ok=True)
 
 

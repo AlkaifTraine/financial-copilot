@@ -30,6 +30,7 @@ from ..llm import complete_json
 from ..resolve import Company
 from .dcf import decay_path, fade
 from .models import (
+    SOURCE_ANALYST,
     SOURCE_DEFAULT,
     SOURCE_HISTORICAL,
     SOURCE_MODEL,
@@ -277,6 +278,64 @@ def _model_margin_bridge(proposal: dict) -> tuple[list, str]:
     return bridge, confidence
 
 
+# Analyst-override keys -> (ledger key, hard sanity rails). Overrides win over the
+# model AND the agent, and are bounded only by these generous physical rails — not the
+# model's anti-hallucination bounds — because a human analyst is authoritative.
+_ANALYST_OVERRIDES = {
+    "year_one_revenue_growth": ("year_one_growth", (-0.90, 5.00)),
+    "terminal_operating_margin": ("terminal_margin", (0.0, 0.95)),
+    "terminal_growth_rate": ("terminal_growth", (0.0, 0.06)),
+}
+
+
+def _apply_overrides(
+    overrides: dict | None,
+    ledger: AssumptionLedger,
+    year_one_growth: float,
+    terminal_growth: float,
+    terminal_margin: float,
+) -> tuple[float, float, float, list[str]]:
+    """Replace any analyst-pinned driver, re-tag its ledger entry, return the values.
+
+    Called AFTER the three drivers are added to the ledger and BEFORE the forecast
+    paths are built, so the paths (and the DCF) compute from the analyst's number.
+    """
+    values = {
+        "year_one_growth": year_one_growth,
+        "terminal_growth": terminal_growth,
+        "terminal_margin": terminal_margin,
+    }
+    applied: list[str] = []
+    for override_key, (ledger_key, (low, high)) in _ANALYST_OVERRIDES.items():
+        raw = (overrides or {}).get(override_key)
+        if raw is None:
+            continue
+        try:
+            requested = float(raw)
+        except (TypeError, ValueError):
+            continue
+        value = min(max(requested, low), high)
+        values[ledger_key] = value
+        applied.append(ledger_key)
+        assumption = ledger.get(ledger_key)
+        if assumption is not None:
+            was_clamped = value != requested
+            assumption.value = value
+            assumption.source = SOURCE_ANALYST
+            assumption.bounds = (low, high)
+            assumption.clamped = was_clamped
+            assumption.raw_value = requested if was_clamped else None
+            assumption.provenance = {}
+            assumption.bridge = []
+            assumption.derivation = (
+                "Analyst-set input" + (" (clamped to a hard sanity rail)" if was_clamped else "")
+            )
+            assumption.rationale = (
+                "Set by the analyst; the model computes from this input, overriding its own estimate."
+            )
+    return values["year_one_growth"], values["terminal_growth"], values["terminal_margin"], applied
+
+
 def derive_inputs(
     history: FinancialHistory,
     company: Company,
@@ -286,6 +345,7 @@ def derive_inputs(
     qualitative_context: str = "",
     use_model: bool = True,
     proposal_override: dict | None = None,
+    overrides: dict | None = None,
 ) -> ForecastInputs:
     """Build the full set of DCF inputs, recording each in ``ledger``.
 
@@ -497,6 +557,14 @@ def derive_inputs(
             bridge=margin_bridge,
             confidence=margin_confidence,
         )
+    )
+
+    # -- analyst overrides ------------------------------------------------
+    # A human analyst can pin any of the three value drivers. Applied here — after the
+    # model/agent set them, before the paths are built — so the forecast and the DCF
+    # compute from the analyst's number, tagged as analyst-set.
+    year_one_growth, terminal_growth, terminal_margin, _applied_overrides = _apply_overrides(
+        overrides, ledger, year_one_growth, terminal_growth, terminal_margin
     )
 
     # -- paths ------------------------------------------------------------

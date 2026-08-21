@@ -283,6 +283,7 @@ def build_report(
     ]
 
     report.valuation_confidence, report.confidence_drivers = _valuation_confidence(valuation)
+    report.analyst_overrides = list(valuation.analyst_overrides)
 
     if progress:
         progress("charts", "rendering charts")

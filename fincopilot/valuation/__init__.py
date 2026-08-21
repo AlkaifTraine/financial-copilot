@@ -14,6 +14,7 @@ from .dcf import run_dcf
 from .reverse import build_priced_in, implied_growth
 from .agent import critique_assumptions
 from .models import (
+    SOURCE_ANALYST,
     Assumption,
     AssumptionLedger,
     BlendedValuation,
@@ -76,6 +77,7 @@ def value_company(
     *,
     qualitative_context: str = "",
     use_model: bool = True,
+    overrides: dict | None = None,
 ) -> Valuation:
     """Produce a complete valuation for ``company``.
 
@@ -85,6 +87,11 @@ def value_company(
         use_model: set False to derive every assumption from history alone —
             used by the tests, and as the fallback when the model is
             unavailable.
+        overrides: analyst-pinned value drivers that override the model and the
+            agent — any of ``year_one_revenue_growth``, ``terminal_operating_margin``,
+            ``terminal_growth_rate`` (decimals) and ``wacc``. The model computes from
+            these; each is recorded as analyst-set. This is the institutional pattern:
+            the analyst owns the assumptions, the model enforces consistency.
     """
     valuation = Valuation(
         ticker=company.ticker,
@@ -105,6 +112,20 @@ def value_company(
 
     # -- discount rate ----------------------------------------------------
     wacc = compute_wacc(history, company, ledger)
+    wacc_override = (overrides or {}).get("wacc")
+    if wacc_override is not None:
+        try:
+            wacc = min(max(float(wacc_override), 0.03), 0.30)   # hard sanity rails
+            wacc_assumption = ledger.get("wacc")
+            if wacc_assumption is not None:
+                wacc_assumption.value = wacc
+                wacc_assumption.source = SOURCE_ANALYST
+                wacc_assumption.derivation = "Analyst-set discount rate"
+                wacc_assumption.rationale = (
+                    "Set by the analyst; overrides the computed WACC."
+                )
+        except (TypeError, ValueError):
+            pass
     tax_rate = ledger.value("tax_rate", 0.21)
 
     # -- share count ------------------------------------------------------
@@ -135,7 +156,7 @@ def value_company(
             probe_ledger = AssumptionLedger()
             probe_inputs = derive_inputs(
                 history, company, probe_ledger, tax_rate=tax_rate,
-                qualitative_context=qualitative_context, use_model=True,
+                qualitative_context=qualitative_context, use_model=True, overrides=overrides,
             )
             probe_dcf = _dcf_from(probe_inputs, wacc, net_debt, shares, history.currency)
             proposal_override = critique_assumptions(
@@ -154,6 +175,7 @@ def value_company(
             qualitative_context=qualitative_context,
             use_model=use_model,
             proposal_override=proposal_override,
+            overrides=overrides,
         )
     except ValueError as exc:
         valuation.warnings.append(str(exc))
@@ -192,6 +214,18 @@ def value_company(
         if abs(walked - target_pp) > 0.5:
             margin.bridge = [*margin.bridge,
                              {"component": "Net other adjustments", "value": round(target_pp - walked, 1)}]
+
+    # Record which drivers a human analyst pinned, so the report can flag the
+    # valuation as analyst-adjusted (the model computed from the analyst's inputs).
+    valuation.analyst_overrides = [
+        item.key for item in ledger.items if item.source == SOURCE_ANALYST
+    ]
+    if valuation.analyst_overrides:
+        valuation.warnings.append(
+            "Analyst-adjusted valuation: the drivers "
+            + ", ".join(valuation.analyst_overrides)
+            + " were set by the analyst; the model computed the fair value from those inputs."
+        )
 
     # -- the model --------------------------------------------------------
     try:

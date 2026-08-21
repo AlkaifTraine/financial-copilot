@@ -134,8 +134,10 @@ def load_company(query: str, *, refresh: bool = False) -> None:
                     index,
                     top_k=6,
                 ).context_block
+                from fincopilot.valuation.overrides import load_overrides
                 st.session_state["valuation"] = value_company(
-                    company, history, qualitative_context=context
+                    company, history, qualitative_context=context,
+                    overrides=load_overrides(company.slug),
                 )
 
             status.update(

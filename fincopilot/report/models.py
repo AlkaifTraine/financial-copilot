@@ -131,6 +131,9 @@ class ReportModel:
     # hiding behind one precise fair value.
     valuation_confidence: str = ""
     confidence_drivers: list[str] = field(default_factory=list)
+    # Value drivers a human analyst pinned (empty for a pure model run). When set,
+    # the report is flagged analyst-adjusted.
+    analyst_overrides: list[str] = field(default_factory=list)
 
     # Canonical metric identities (report/metrics.py), used by the QA gate to
     # check that no section contradicts an authoritative figure.
