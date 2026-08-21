@@ -355,6 +355,7 @@ def generate_forward(
     qualitative_context: str = "",
     as_of: str | None = None,
     use_model: bool = True,
+    corrections: list[str] | None = None,
 ) -> ForwardView:
     """Produce the catalysts and monitoring dashboard, grounded in the valuation."""
     if not use_model or valuation.dcf is None:
@@ -364,13 +365,14 @@ def generate_forward(
         view.catalysts, _ = classify_catalysts(view.catalysts, as_of)
         return view
 
+    from .correction import correction_instruction
     payload = complete_json(
         _PROMPT.format(
             company=f"{company.name} ({company.ticker})",
             facts=_facts(history, valuation),
             context=(qualitative_context or "None retrieved.")[:4000],
             as_of=as_of or "the report date",
-        ),
+        ) + correction_instruction(corrections),
         system=_SYSTEM,
         temperature=0.2,
         max_tokens=1300,

@@ -579,10 +579,12 @@ def check_segment_reconciliation(report) -> list[str]:
     return []
 
 
-# Severity of each check. CRITICAL blocks publication (QA FAILED); HIGH/MEDIUM/LOW
-# are delivered with the report as warnings of decreasing urgency. Only deterministic,
-# high-confidence checks are CRITICAL — a regex-over-prose heuristic can misread benign
-# language, and must never deny a correct report, so those are capped at HIGH.
+# Severity of each check, and the publication gate (v8): CRITICAL and HIGH both BLOCK
+# publication; MEDIUM warns; LOW passes. The system must never publish a report that
+# still contains a known CRITICAL/HIGH issue, so both are on the gate. CRITICAL is
+# reserved for deterministic numeric/structural contradictions; HIGH covers the
+# integrity errors (unsupported market-implied claims, annualization, wrong-period
+# labels, grounding failures) that a research report must not ship either.
 CHECK_SEVERITY = {
     "consistency": "CRITICAL",              # probabilities sum, scenario order, rating sign
     "canonical_metric": "CRITICAL",         # a figure contradicting a canonical value
@@ -595,19 +597,21 @@ CHECK_SEVERITY = {
     "market_implied": "HIGH",               # a market-implied figure not traced to reverse DCF
     "consensus_scenario": "HIGH",           # our probability pinned on external consensus
     "segment_end_market": "HIGH",           # segment % conflated with end-market %
-    "metric_semantics": "MEDIUM",           # a quarterly label on an annual figure
+    "metric_semantics": "HIGH",             # a quarterly label on an annual figure (period error)
     "forward_period": "MEDIUM",             # a forward trigger keyed to a past year
 }
 _SEVERITY_ORDER = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+BLOCKING_SEVERITIES = ("CRITICAL", "HIGH")
 
 
 def run_qa(report) -> list[dict]:
     """Run every QA pass, tag each finding with a severity, and set the publication gate.
 
-    CRITICAL findings block publication (report.qa_status = "FAILED", report.blocked =
-    True) — they are deterministic contradictions a research report must never ship.
-    HIGH/MEDIUM/LOW are delivered with the report as warnings the reader can weigh.
-    Returns the findings as ``{severity, check, message}`` dicts, most severe first.
+    v8 gate: a CRITICAL or HIGH finding BLOCKS publication (report.qa_status = "FAILED",
+    report.blocked = True). MEDIUM/LOW are delivered as warnings. The report must never
+    reach final output while a CRITICAL/HIGH issue remains; the correction loop
+    (report/correction.py) tries to fix them first, then this gate withholds if it
+    cannot. Idempotent: re-runnable by the correction loop without duplicating warnings.
     """
     results = {
         "consistency": check_consistency(report),
@@ -632,13 +636,17 @@ def run_qa(report) -> list[dict]:
             findings.append({"severity": severity, "check": check_name, "message": message})
     findings.sort(key=lambda f: _SEVERITY_ORDER[f["severity"]])
 
+    # Idempotent warning refresh: drop any QA lines from a prior run before re-adding,
+    # so the correction loop can call run_qa repeatedly without stacking duplicates.
+    report.warnings = [w for w in report.warnings if not w.lstrip().startswith("[")
+                       or "QA — " not in w]
     for finding in findings:
         log.info("QA [%s] %s", finding["severity"], finding["message"])
         report.warnings.append(f"[{finding['severity']}] QA — {finding['message']}")
 
-    critical = [f["message"] for f in findings if f["severity"] == "CRITICAL"]
+    blocking = [f["message"] for f in findings if f["severity"] in BLOCKING_SEVERITIES]
     report.qa_findings = findings
-    report.blocking_issues = critical
-    report.blocked = bool(critical)
-    report.qa_status = "FAILED" if critical else "PASSED"
+    report.blocking_issues = blocking
+    report.blocked = bool(blocking)
+    report.qa_status = "FAILED" if blocking else "PASSED"
     return findings

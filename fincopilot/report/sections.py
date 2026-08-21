@@ -196,6 +196,7 @@ def build_section(
     *,
     latest_fiscal_year: int | None = None,
     financial_facts: str = "",
+    corrections: list[str] | None = None,
 ) -> Section:
     """Retrieve evidence for one section and write it."""
     section = Section(key=spec.key, title=spec.title)
@@ -214,6 +215,7 @@ def build_section(
         log.info("no evidence retrieved for section %s", spec.key)
         return section
 
+    from .correction import correction_instruction
     payload = complete_json(
         _PROMPT.format(
             company=company_name,
@@ -222,7 +224,7 @@ def build_section(
             financial_facts=financial_facts,
             siblings=_sibling_brief(spec),
             context=result.context_block,
-        ),
+        ) + correction_instruction(corrections),
         system=_SYSTEM,
         model=config.WRITER_MODEL,
         temperature=config.TEMPERATURE_PROSE,
@@ -258,6 +260,7 @@ def build_all(
     *,
     latest_fiscal_year: int | None = None,
     financial_facts: str = "",
+    corrections: list[str] | None = None,
     progress=None,
 ) -> list[Section]:
     """Generate every narrative section.
@@ -273,7 +276,7 @@ def build_all(
             progress("section", f"[{position}/{len(SPECS)}] {spec.title}")
         section = build_section(
             spec, index, company_name, latest_fiscal_year=latest_fiscal_year,
-            financial_facts=financial_facts,
+            financial_facts=financial_facts, corrections=corrections,
         )
         if not section.is_empty:
             sections.append(section)

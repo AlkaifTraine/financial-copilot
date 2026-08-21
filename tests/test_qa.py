@@ -200,16 +200,17 @@ class TestRiskDirection:
         )
         assert check_risk_direction(report) == []
 
-    def test_directional_finding_is_advisory_not_blocking(self):
+    def test_directional_finding_is_high_and_blocks(self):
+        # v8: a directional impossibility is HIGH, and HIGH blocks publication.
         report = self._report(
             financial_impact="A disruption could reduce revenue CAGR from our 13.3% base case "
                              "toward market-implied 25.3%."
         )
         findings = run_qa(report)
-        assert report.blocked is False                                        # advisory, not a gate
+        assert report.blocked is True and report.qa_status == "FAILED"
         assert any(f["severity"] == "HIGH" and "directional" in f["message"].lower()
-                   for f in findings)                                          # surfaced as HIGH
-        assert any("directional" in w.lower() for w in report.warnings)       # and in the QA notes
+                   for f in findings)
+        assert any("directional" in w.lower() for w in report.warnings)
 
 
 class TestMetricSemantics:
@@ -232,10 +233,11 @@ class TestMetricSemantics:
         report = self._report("Revenue growth (YoY)", assumption="Our 65% YoY growth")
         assert check_metric_semantics(report) == []
 
-    def test_semantic_finding_is_advisory_not_blocking(self):
+    def test_semantic_finding_is_high_and_blocks(self):
+        # v8: a quarterly label on an annual figure is a period error — HIGH, blocks.
         report = self._report("Quarterly revenue growth rate", assumption="Our 65% YoY FY2026 growth")
         run_qa(report)
-        assert report.blocked is False
+        assert report.blocked is True and report.qa_status == "FAILED"
 
 
 class TestFinancialTypeSafety:
@@ -300,13 +302,14 @@ class TestFinancialTypeSafety:
         )
         assert any("distinct" in i.lower() for i in check_consensus_scenario(report))
 
-    def test_all_type_safety_checks_are_advisory(self):
+    def test_type_safety_findings_block_in_v8(self):
+        # v8: segment-vs-end-market and annualization are HIGH and block publication.
         report = self._with_sections(
             "Compute & Networking was 90% of FY2026 revenue [1]; also Compute & Networking ~60% of revenue [2].",
             "The $78B Q1 FY2027 guidance annualized implies 14% growth over FY2026 [1].",
         )
         run_qa(report)
-        assert report.blocked is False   # advisory only, never blocks
+        assert report.blocked is True and report.qa_status == "FAILED"
 
 
 class TestQaSeverityGate:
@@ -538,3 +541,52 @@ class TestDisclosures:
         from fincopilot.report.builder import _disclosures
         d = _disclosures(self._report(), self._val(overrides=["terminal_margin"]))
         assert "ANALYST-ADJUSTED" in d["methodology"] and "terminal_margin" in d["methodology"]
+
+
+class TestV8PublicationGate:
+    """v8: CRITICAL and HIGH both BLOCK. The v7 failure mode — recognising the $78B
+    annualization error yet still publishing it — must be impossible."""
+
+    def test_v7_78b_annualization_is_blocked_not_published(self):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.canonical_metrics = [{"key": "revenue", "label": "Revenue", "value": 215.9e9,
+                                     "unit": "currency", "period": "FY2026", "definition": "x"}]
+        report.sections = [Section(
+            key="outlook", title="Outlook & Capital Allocation",
+            paragraphs=["The $78 billion Q1 FY2027 revenue guidance annualized implies about "
+                        "14% growth over FY2026 [1]."],
+            evidence=_evidence(2))]
+        run_qa(report)
+        assert report.blocked is True and report.qa_status == "FAILED"
+        assert any(f["check"] == "annualization_arithmetic" and f["severity"] == "CRITICAL"
+                   for f in report.qa_findings)
+
+    def test_high_severity_now_blocks(self):
+        # A HIGH finding alone must block in v8 (it did not in v7).
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.sections = [Section(key="t", title="Thesis",
+                                   paragraphs=["At today's price the market assumes >60% "
+                                               "operating margins forever [1]."],
+                                   evidence=_evidence(2))]
+        report.priced_in = {"rows": [{"label": "Operating margin", "unit": "%",
+                                      "implied_value": 0.882, "reachable": True}]}
+        run_qa(report)
+        assert report.blocked is True and report.qa_status == "FAILED"
+        assert any(f["severity"] == "HIGH" and f["check"] == "market_implied"
+                   for f in report.qa_findings)
+
+    def test_clean_report_passes(self):
+        report = ReportModel(company_name="X", ticker="X", currency="USD")
+        report.sections = [Section(key="s", title="S", paragraphs=["Revenue rose 60% [1]."],
+                                   evidence=_evidence(2))]
+        run_qa(report)
+        assert report.blocked is False and report.qa_status == "PASSED"
+
+    def test_run_qa_is_idempotent_on_warnings(self):
+        report = ReportModel(company_name="X", ticker="X")
+        report.rating = "SELL"
+        report.upside = 0.40                      # SELL with big upside -> a contradiction
+        run_qa(report)
+        first = list(report.warnings)
+        run_qa(report)                            # re-run (as the correction loop does)
+        assert report.warnings == first           # no duplicate QA lines

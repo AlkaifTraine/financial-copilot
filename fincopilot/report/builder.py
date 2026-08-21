@@ -465,10 +465,13 @@ def build_report(
             f"filings, and should be verified against the company's own reports."
         )
 
-    # Final QA: citation grounding, internal consistency, and a canonical-metric
-    # check. Runs last, over the fully assembled report. Critical failures set the
-    # publication gate (report.blocked); softer findings surface in limitations.
-    from .metrics import canonical_metrics
+    # Final QA over the fully assembled report, then the v8 self-correction loop: if a
+    # CRITICAL/HIGH issue is found, regenerate the responsible component with the QA
+    # feedback and re-run QA, up to a retry budget. The report is never returned in a
+    # publishable state while a CRITICAL/HIGH issue remains — the gate leaves
+    # report.blocked=True and the app withholds it.
+    from .correction import run_correction_loop
+    from .metrics import canonical_block, canonical_metrics
     from .qa import run_qa
 
     report.canonical_metrics = [
@@ -476,8 +479,49 @@ def build_report(
          "unit": m.unit, "period": m.period, "definition": m.definition}
         for m in canonical_metrics(history, valuation)
     ]
-    # Institutional apparatus — computed last, once risks and the rating are set.
     report.disclosures = _disclosures(report, valuation)
+
+    # Regenerators the correction loop can call, each re-running one component with the
+    # QA feedback folded into its prompt. Only wired for the LLM-generated prose parts;
+    # deterministic contradictions cannot be fixed this way and simply stay blocked.
+    regenerators: dict = {}
+    if include_narrative and index is not None and valuation.dcf is not None:
+        from .monitoring import generate_forward
+        from .risks import generate_risks
+        from .thesis import generate_thesis
+
+        def _regen_thesis(corr):
+            report.thesis = generate_thesis(
+                company, history, valuation,
+                qualitative_context=thesis_context, corrections=corr).to_dict()
+
+        def _regen_risks(corr):
+            report.risks = generate_risks(
+                company, history, valuation,
+                qualitative_context=risk_context, corrections=corr).to_dict()["risks"]
+
+        def _regen_forward(corr):
+            view = generate_forward(
+                company, history, valuation, qualitative_context=forward_context,
+                as_of=report.as_of, corrections=corr)
+            if view.catalysts or view.watch_items:
+                report.forward = view.to_dict()
+
+        regenerators.update(thesis=_regen_thesis, risks=_regen_risks, forward=_regen_forward)
+
+    if include_narrative and index is not None:
+        def _regen_sections(corr):
+            report.sections = section_builder.build_all(
+                index, company.name,
+                latest_fiscal_year=history.latest.fiscal_year if history.latest else None,
+                financial_facts=canonical_block(history, valuation), corrections=corr)
+
+        regenerators["sections"] = _regen_sections
+
     run_qa(report)
+    if regenerators:
+        run_correction_loop(report, regenerators)
+        # Risks/rating may have changed during correction; refresh the disclosures block.
+        report.disclosures = _disclosures(report, valuation)
 
     return report

@@ -716,21 +716,25 @@ with report_tab:
 
     report = st.session_state["report"]
     if report and getattr(report, "blocked", False):
-        # CRITICAL findings fail the publication gate: no polished report is offered,
-        # a diagnostic is shown instead, and the issues must be fixed (regenerate).
-        st.error("**QA FAILED** — the report has unresolved CRITICAL issues and was not published.")
-        st.markdown("**Critical issues:**")
+        # CRITICAL/HIGH findings that the self-correction loop could not clear fail the
+        # publication gate: no polished report is offered, a diagnostic is shown instead.
+        st.error(
+            "**REPORT BLOCKED — unresolved integrity issue.** The self-correction loop could "
+            "not resolve one or more CRITICAL/HIGH QA findings, so the report was not published."
+        )
+        st.markdown("**Unresolved issues:**")
         for i, issue in enumerate(report.blocking_issues, 1):
             st.markdown(f"{i}. {issue}")
         st.info(
-            "These are deterministic integrity failures (a numeric contradiction, a valuation "
-            "double-count, or a segment/probability mismatch). Regenerate to retry."
+            "The report must not ship with a known integrity error. Regenerate to retry — a "
+            "transient phrasing often clears; a persistent one points at the data/calculation."
         )
-        report = None   # withhold the polished report until CRITICAL issues clear
+        report = None   # withhold the polished report until the blocking issues clear
     elif report:
-        # No CRITICAL issue: the gate passed. Show status and any softer findings.
-        st.success("**QA STATUS: PASSED** — no critical issues.")
-        soft = [f for f in getattr(report, "qa_findings", []) if f.get("severity") != "CRITICAL"]
+        # No CRITICAL/HIGH issue survived: the gate passed. Show status + softer notes.
+        st.success("**QA STATUS: PASSED** — no critical or high issues.")
+        soft = [f for f in getattr(report, "qa_findings", [])
+                if f.get("severity") not in ("CRITICAL", "HIGH")]
         if soft:
             with st.expander(f"QA notes ({len(soft)} non-blocking)"):
                 for f in soft:

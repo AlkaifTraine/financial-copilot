@@ -217,17 +217,19 @@ def generate_risks(
     *,
     qualitative_context: str = "",
     use_model: bool = True,
+    corrections: list[str] | None = None,
 ) -> RiskAssessment:
     """Produce the quantified risk assessment, grounded in the valuation."""
     if not use_model or valuation.dcf is None:
         return _fallback(history, valuation)
 
+    from .correction import correction_instruction
     payload = complete_json(
         _PROMPT.format(
             company=f"{company.name} ({company.ticker})",
             facts=_facts(history, valuation),
             context=(qualitative_context or "None retrieved.")[:4000],
-        ),
+        ) + correction_instruction(corrections),
         system=_SYSTEM,
         model=config.WRITER_MODEL,
         temperature=0.2,

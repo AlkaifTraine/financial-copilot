@@ -243,18 +243,20 @@ def generate_thesis(
     *,
     qualitative_context: str = "",
     use_model: bool = True,
+    corrections: list[str] | None = None,
 ) -> InvestmentThesis:
     """Produce the investment thesis, grounded in the computed valuation."""
     if not use_model or valuation.dcf is None:
         return _fallback(valuation, history)
 
+    from .correction import correction_instruction
     rating = valuation.rating
     facts = _facts(company, history, valuation)
     price = f"{valuation.currency} {valuation.share_price:,.0f}" if valuation.share_price else "today's price"
 
     payload = complete_json(
         _PROMPT.format(facts=facts, context=(qualitative_context or "None retrieved.")[:4000],
-                       rating=rating, price=price),
+                       rating=rating, price=price) + correction_instruction(corrections),
         system=_SYSTEM,
         model=config.WRITER_MODEL,
         temperature=0.2,
