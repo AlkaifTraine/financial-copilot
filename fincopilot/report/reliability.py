@@ -50,6 +50,31 @@ def _extract(text: str) -> tuple[list[float], list[float]]:
     return pcts, money
 
 
+def _context(text: str, start: int, end: int, width: int = 70) -> str:
+    """A short window of ``text`` around a match, for the drill-down list."""
+    left, right = max(0, start - width), min(len(text), end + width)
+    snippet = text[left:right].strip()
+    return ("…" if left > 0 else "") + snippet + ("…" if right < len(text) else "")
+
+
+def _located_figures(text: str, location: str) -> list[dict]:
+    """Every figure in ``text`` with its raw form, value, kind, location and context."""
+    figures: list[dict] = []
+    for match in _PCT.finditer(text):
+        figures.append({"figure": match.group(0).strip(), "value": float(match.group(1)),
+                        "kind": "pct", "location": location,
+                        "context": _context(text, match.start(), match.end())})
+    for match in _MONEY.finditer(text):
+        if match.group(1) is not None:
+            value = _money_value(match.group(1), match.group(2))
+        else:
+            value = _money_value(match.group(3), match.group(4))
+        figures.append({"figure": match.group(0).strip(), "value": value, "kind": "money",
+                        "location": location,
+                        "context": _context(text, match.start(), match.end())})
+    return figures
+
+
 def _prose_text(report) -> str:
     parts: list[str] = []
     for section in getattr(report, "sections", None) or []:
@@ -154,15 +179,41 @@ def compute_reliability(report) -> dict:
     """A deterministic reliability scorecard for a finished report."""
     model_pcts, model_money = _model_numbers(report)
     source_pcts, source_money = _extract(_source_text(report))
-    prose_pcts, prose_money = _extract(_prose_text(report))
-
     grounded_pcts = list(model_pcts) + source_pcts
     grounded_money = list(model_money) + source_money
 
-    traced = (sum(_pct_traced(v, grounded_pcts) for v in prose_pcts)
-              + sum(_money_traced(v, grounded_money) for v in prose_money))
-    total = len(prose_pcts) + len(prose_money)
-    unverified_pct = round((total - traced) / total * 100, 1) if total else 0.0
+    # Gather every narrative figure WITH its location, so the scorecard can list the
+    # specific unverified ones for a reviewer to jump to.
+    located: list[dict] = []
+    for section in (report.sections or []):
+        text = " ".join(p for p in [section.summary, *section.paragraphs, section.implication] if p)
+        located += _located_figures(text, section.title or section.key)
+    thesis = getattr(report, "thesis", None) or {}
+    if isinstance(thesis, dict):
+        thesis_text = " ".join(str(v) for v in thesis.values() if isinstance(v, str))
+        located += _located_figures(thesis_text, "Investment thesis")
+    for risk in (getattr(report, "risks", None) or []):
+        risk_text = " ".join([risk.get("financial_impact", ""), risk.get("valuation_impact", "")])
+        if risk_text.strip():
+            located += _located_figures(risk_text, f"Risk: {risk.get('risk', '')}".strip(": "))
+
+    untraced_occurrences = 0
+    unverified: list[dict] = []
+    seen: set = set()
+    for fig in located:
+        traced = (_pct_traced(fig["value"], grounded_pcts) if fig["kind"] == "pct"
+                  else _money_traced(fig["value"], grounded_money))
+        if traced:
+            continue
+        untraced_occurrences += 1
+        key = (fig["figure"], fig["context"][:40])       # dedupe the DISPLAY list only
+        if key not in seen:
+            seen.add(key)
+            unverified.append({"figure": fig["figure"], "location": fig["location"],
+                               "context": fig["context"]})
+
+    total = len(located)
+    unverified_pct = round(untraced_occurrences / total * 100, 1) if total else 0.0
 
     # citation coverage: fraction of narrative paragraphs carrying an inline [n] marker
     cited = para_total = 0
@@ -199,10 +250,13 @@ def compute_reliability(report) -> dict:
         "unverified_figures_pct": unverified_pct,
         "traceable_figures_pct": round(100 - unverified_pct, 1),
         "figures_checked": total,
-        "figures_traced": traced,
+        "figures_traced": total - untraced_occurrences,
         "citation_coverage_pct": citation_coverage,
         "qa_status": report.qa_status,
         "qa_findings": dict(counts),
         "source_freshness_pct": freshness,
         "valuation_confidence": report.valuation_confidence or "n/a",
+        # The specific unverified figures (deduped), so a reviewer can jump to each.
+        "unverified": unverified[:25],
+        "unverified_count": untraced_occurrences,
     }

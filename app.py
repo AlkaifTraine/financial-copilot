@@ -93,6 +93,19 @@ def _render_reliability(report) -> None:
         f"not proof of error. A blocked report (any CRITICAL/HIGH) is never published."
     )
 
+    unverified = r.get("unverified") or []
+    if unverified:
+        shown = r.get("unverified_count", len(unverified))
+        with st.expander(f"🔎 Review the {shown} unverified figure(s) — jump straight to each"):
+            st.caption("Each figure below could not be matched to a model value or a cited "
+                       "source snippet. Check it against the primary source.")
+            for u in unverified:
+                st.markdown(
+                    f"- **{u['figure']}** · _{u['location']}_  \n"
+                    f"  <span style='color:gray;font-size:0.85em;'>{u['context']}</span>",
+                    unsafe_allow_html=True,
+                )
+
 
 def reset_company_state() -> None:
     """Clear everything derived from the previously loaded company.

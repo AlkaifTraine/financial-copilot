@@ -77,3 +77,27 @@ class TestScorecard:
                     "citation_coverage_pct", "qa_status", "qa_findings",
                     "source_freshness_pct", "valuation_confidence"):
             assert key in rel
+
+
+class TestDrilldown:
+    def test_unverified_figures_listed_with_location_and_context(self):
+        report = _report(["Margins mysteriously hit 99% this year [1]."],
+                         assumptions=[{"key": "terminal_margin", "value": 0.48, "unit": "%"}])
+        rel = compute_reliability(report)
+        assert rel["unverified_count"] == 1
+        entry = rel["unverified"][0]
+        assert entry["figure"] == "99%"
+        assert entry["location"] == "S"
+        assert "99%" in entry["context"]
+
+    def test_traced_figures_are_not_listed(self):
+        report = _report(["Revenue $216 billion [1]."],
+                         canonical=[{"key": "revenue", "value": 216e9, "unit": "currency"}])
+        rel = compute_reliability(report)
+        assert rel["unverified"] == [] and rel["unverified_count"] == 0
+
+    def test_repeated_unverified_figure_deduped_in_list_but_counted(self):
+        report = _report(["Margins hit 99% [1].", "Again margins were 99% [1]."])
+        rel = compute_reliability(report)
+        assert rel["unverified_count"] == 2          # both occurrences counted
+        assert len(rel["unverified"]) == 1           # deduped in the display list
