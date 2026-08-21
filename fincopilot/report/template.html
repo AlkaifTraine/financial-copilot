@@ -342,8 +342,8 @@
     {% for d in cp.dimensions %}
       <tr>
         <td><strong>{{ d.dimension }}</strong></td>
-        <td style="text-align:left;">{{ d.assessment }}</td>
-        <td style="text-align:left;white-space:nowrap;">{{ d.strength }}</td>
+        <td style="text-align:left;">{{ d.assessment }}{% if d.evidence %}<br><span style="color:var(--muted);font-size:11px;">Evidence: {{ d.evidence }}</span>{% endif %}</td>
+        <td style="text-align:left;white-space:nowrap;">{{ d.strength }}{% if d.confidence %}<br><span style="color:var(--muted);font-size:11px;">{{ d.confidence }} conf.</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

@@ -41,7 +41,9 @@ class MoatDimension:
 
     dimension: str
     assessment: str
-    strength: str      # Strong / Moderate / Weak / None
+    strength: str          # Strong / Moderate / Weak / None
+    confidence: str = ""   # High / Medium / Low — how well the score is evidenced
+    evidence: str = ""     # the observable metric/disclosure/competitor fact behind it
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -167,7 +169,7 @@ Produce:
 1. moat_strength: Wide / Narrow / None (how strong the advantage is TODAY)
 2. moat_direction: Widening / Stable / Narrowing (its trajectory)
 3. moat_summary: 1-2 sentences tying strength AND direction to whether they defend our assumed terminal margin
-4. dimensions: assess each source of advantage that applies — software/ecosystem, hardware, switching costs, scale, network effects, customer relationships, technology leadership. Each: dimension, assessment (one line), strength (Strong / Moderate / Weak / None)
+4. dimensions: assess each source of advantage that applies — software/ecosystem, hardware, switching costs, scale, network effects, customer relationships, technology leadership. Each: dimension, assessment (one line), strength (Strong / Moderate / Weak / None), confidence (High / Medium / Low), evidence (the SPECIFIC observable fact behind the score — a metric, a company disclosure, a competitor move, a customer fact or industry data; not a feeling). A score without evidence must be marked Low confidence.
 5. competitive_threats: 2-4 specific threats to the advantage
 6. management_vs_us: 3-4 topics where an ACTUAL sourced management statement meets our view. Each: topic, management_statement (real quote/paraphrase — do NOT invent), source (the filing/form), source_date (the source's date or period, e.g. "FY2026 10-K, Feb 2026"), our_interpretation, our_model, difference. Omit any topic where you cannot cite a real statement.
    - our_model must be the QUANTIFIED financial-model consequence — name the specific assumption AND its number (e.g. "we normalize terminal operating margin from ~60% today to 48%", "we fade year-1 growth from 33% toward the terminal rate"). Do NOT restate the qualitative claim; translate it into a modelled number.
@@ -175,7 +177,7 @@ Produce:
 
 Return JSON:
 {{"moat_strength": "...", "moat_direction": "...", "moat_summary": "...",
-  "dimensions": [{{"dimension": "...", "assessment": "...", "strength": "..."}}],
+  "dimensions": [{{"dimension": "...", "assessment": "...", "strength": "...", "confidence": "...", "evidence": "..."}}],
   "competitive_threats": ["..."],
   "management_vs_us": [{{"topic": "...", "management_statement": "...", "source": "...", "source_date": "...", "our_interpretation": "...", "our_model": "...", "difference": "..."}}]}}"""
 
@@ -231,6 +233,8 @@ def generate_competitive(
             dimension=_str(entry, "dimension"),
             assessment=_str(entry, "assessment"),
             strength=_str(entry, "strength") or "Moderate",
+            confidence=_str(entry, "confidence"),
+            evidence=_str(entry, "evidence"),
         )
         for entry in (payload.get("dimensions") or [])
         if isinstance(entry, dict) and _str(entry, "dimension")

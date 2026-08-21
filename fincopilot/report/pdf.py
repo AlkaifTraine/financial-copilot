@@ -479,10 +479,16 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             header = ["Source of advantage", "Assessment", "Strength"]
             rows = [[Paragraph(h, styles["cellb"]) for h in header]]
             for dim in cp["dimensions"]:
+                assessment = dim.get("assessment", "")
+                if dim.get("evidence"):
+                    assessment += f'<br/><font size="6.5" color="#7c8794">Evidence: {dim["evidence"]}</font>'
+                strength = dim.get("strength", "")
+                if dim.get("confidence"):
+                    strength += f'<br/><font size="6.5" color="#7c8794">{dim["confidence"]} conf.</font>'
                 rows.append([
                     Paragraph(f"<b>{dim.get('dimension', '')}</b>", styles["cell"]),
-                    Paragraph(dim.get("assessment", ""), styles["cell"]),
-                    Paragraph(dim.get("strength", ""), styles["cell"]),
+                    Paragraph(assessment, styles["cell"]),
+                    Paragraph(strength, styles["cell"]),
                 ])
             widths = [CONTENT_WIDTH * w for w in (0.28, 0.55, 0.17)]
             table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
