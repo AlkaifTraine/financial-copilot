@@ -579,8 +579,22 @@
         <td>{{ pct(sf.bottom_up_cagr) }}</td>
         <td>{{ money(sf.bottom_up_terminal_revenue) }}</td>
       </tr>
+      {% if sf.top_down_cagr is not none %}
+      <tr style="color:var(--muted);">
+        <td>Top-down (headline DCF)</td>
+        <td>&ndash;</td><td>&ndash;</td>
+        <td>{{ pct(sf.top_down_cagr) }}</td>
+        <td>&ndash;</td>
+      </tr>
+      {% endif %}
     </tbody>
   </table></div>
+  {% if sf.top_down_cagr is not none %}
+  <p style="font-size:12.5px;margin-top:8px;"><strong>Reconciliation:</strong>
+    bottom-up {{ pct(sf.bottom_up_cagr) }} vs top-down {{ pct(sf.top_down_cagr) }} —
+    a {{ '%+.0f'|format((sf.bottom_up_cagr - sf.top_down_cagr) * 100) }}pp gap. The headline
+    valuation uses the more conservative TOP-DOWN path; the bottom-up sum is the cross-check.</p>
+  {% endif %}
   <p style="font-size:12.5px;color:var(--ink-2);margin-top:8px;">{{ sf.note }}</p>
   {% endif %}
 

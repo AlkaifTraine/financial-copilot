@@ -729,15 +729,26 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             "Bottom-up total", _money(sf["latest_segment_sum"]), "-",
             _pct(sf["bottom_up_cagr"]), _money(sf["bottom_up_terminal_revenue"]),
         ])
+        totals_row = len(rows) - 1
+        if sf.get("top_down_cagr") is not None:
+            rows.append([
+                "Top-down (headline DCF)", "-", "-", _pct(sf["top_down_cagr"]), "-",
+            ])
         widths = [CONTENT_WIDTH * w for w in (0.32, 0.19, 0.15, 0.15, 0.19)]
         table = _table(rows, widths, styles)
-        # Emphasise the totals row.
-        last = len(rows) - 1
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, last), (-1, last), SURFACE_2),
-            ("FONTNAME", (0, last), (0, last), "Helvetica-Bold"),
+            ("BACKGROUND", (0, totals_row), (-1, totals_row), SURFACE_2),
+            ("FONTNAME", (0, totals_row), (0, totals_row), "Helvetica-Bold"),
         ]))
         story.append(table)
+        if sf.get("top_down_cagr") is not None:
+            gap = (sf["bottom_up_cagr"] - sf["top_down_cagr"]) * 100
+            story.append(Paragraph(
+                f"<b>Reconciliation:</b> bottom-up {_pct(sf['bottom_up_cagr'])} vs top-down "
+                f"{_pct(sf['top_down_cagr'])} — a {gap:+.0f}pp gap. The headline valuation uses the "
+                f"more conservative TOP-DOWN path; the bottom-up sum is the cross-check.",
+                styles["small"],
+            ))
         story.append(Paragraph(sf["note"], styles["small"]))
 
     # -- scenarios --------------------------------------------------------
