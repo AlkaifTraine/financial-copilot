@@ -725,6 +725,7 @@
     <li>
       <strong>{{ s.label }}</strong>
       {% if s.filed %}<span style="color:var(--muted)"> · filed {{ s.filed }}</span>{% endif %}
+      {% if s.freshness %}<span class="fc-tag">{{ s.freshness }}</span>{% endif %}
       {% if s.origin == 'sec_edgar' %}<span class="fc-tag">SEC EDGAR</span>{% endif %}
       <br><a href="{{ s.url }}">{{ s.url }}</a>
     </li>

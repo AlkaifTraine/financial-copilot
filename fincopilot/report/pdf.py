@@ -911,8 +911,11 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         story.append(Spacer(1, 3))
         for source in report.sources:
             filed = f" &middot; filed {source['filed']}" if source.get("filed") else ""
+            fresh = (
+                f' &middot; <b>{source["freshness"]}</b>' if source.get("freshness") else ""
+            )
             story.append(Paragraph(
-                f"<b>{source['label']}</b>{filed}<br/>"
+                f"<b>{source['label']}</b>{filed}{fresh}<br/>"
                 f'<font size="7" color="#2a78d6">{source["url"]}</font>',
                 styles["small"],
             ))

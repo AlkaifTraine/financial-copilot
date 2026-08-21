@@ -449,3 +449,13 @@ class TestMarginBridge:
     def test_missing_bridge_is_empty(self):
         from fincopilot.valuation.assumptions import _model_margin_bridge
         assert _model_margin_bridge({"terminal_operating_margin": {"value": 0.48}}) == ([], "")
+
+
+class TestSourceFreshness:
+    def test_freshness_buckets(self):
+        from fincopilot.report.builder import _source_freshness
+        assert _source_freshness("2026-06-01", "2026-08-20") == "Current"      # ~2.6 months
+        assert _source_freshness("2025-06-01", "2026-08-20") == "Recent"       # ~14.5 months
+        assert _source_freshness("2023-01-01", "2026-08-20") == "Historical context"
+        assert _source_freshness(None, "2026-08-20") == ""
+        assert _source_freshness("bad", "2026-08-20") == ""

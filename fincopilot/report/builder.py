@@ -22,6 +22,27 @@ from .models import KPI, ReportModel
 log = logging.getLogger(__name__)
 
 
+def _source_freshness(filed: str | None, as_of: str | None) -> str:
+    """Classify a source by age relative to the report date.
+
+    Current (<=6 months) / Recent (<=18 months) / Historical context (older). Lets a
+    reader see whether a cited filing is current evidence or background, and steers
+    the prose to prefer the newest filing rather than a stale one.
+    """
+    from datetime import date
+    try:
+        filed_on = date.fromisoformat(str(filed)[:10])
+        reference = date.fromisoformat(str(as_of)[:10])
+    except (TypeError, ValueError):
+        return ""
+    months = (reference - filed_on).days / 30.44
+    if months <= 6:
+        return "Current"
+    if months <= 18:
+        return "Recent"
+    return "Historical context"
+
+
 def _fmt_money(value: float | None, currency: str) -> str:
     """Compact money for a KPI tile."""
     if value is None:
@@ -201,7 +222,9 @@ def build_report(
     if valuation.comps:
         report.comps = valuation.comps.to_dict()
 
-    # The exact documents the report is grounded in, with their original URLs.
+    # The exact documents the report is grounded in, with their original URLs and a
+    # freshness label (Current / Recent / Historical context) from the filing date,
+    # so a reader can see at a glance whether a source is current or background.
     report.sources = [
         {
             "label": document.label,
@@ -209,6 +232,7 @@ def build_report(
             "origin": document.origin,
             "pages": document.page_count,
             "filed": document.filed_date,
+            "freshness": _source_freshness(document.filed_date, report.as_of),
         }
         for document in ingest.accepted
     ]
