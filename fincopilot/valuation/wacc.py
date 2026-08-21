@@ -99,15 +99,23 @@ def _equity_risk_premium(company: Company, ledger: AssumptionLedger) -> float:
     """Excess return demanded for holding equities over government bonds."""
     if company.country == "IN":
         premium = config.DEFAULT_INDIA_RISK_PREMIUM
+        derivation = (
+            f"Mature-market ERP plus an India country-risk premium, {premium * 100:.1f}%"
+        )
         rationale = (
-            "Mature-market equity risk premium plus an India country risk "
-            "premium, reflecting additional sovereign and currency risk."
+            f"A {premium * 100:.1f}% equity risk premium: the mature-market base (~4.5-5.5%, "
+            f"long-run realised equity-over-bond excess return per Ibbotson/Damodaran) plus an "
+            f"India country-risk premium for additional sovereign and currency risk (Damodaran "
+            f"country-risk approach)."
         )
     else:
         premium = config.DEFAULT_EQUITY_RISK_PREMIUM
+        derivation = f"Mature-market ERP, {premium * 100:.1f}% (reference range ~4.5-5.5%)"
         rationale = (
-            "Standard mature-market equity risk premium, in line with long-run "
-            "realised excess returns of equities over government bonds."
+            f"A {premium * 100:.1f}% equity risk premium, method: the long-run realised excess "
+            f"return of equities over government bonds (Ibbotson/Damodaran) and Damodaran's current "
+            f"implied ERP, which cluster in a ~4.5-5.5% reference range for the US. Held constant "
+            f"across names rather than re-estimated per company — not an arbitrary default."
         )
 
     ledger.add(
@@ -117,7 +125,7 @@ def _equity_risk_premium(company: Company, ledger: AssumptionLedger) -> float:
             value=premium,
             unit="%",
             source=SOURCE_DEFAULT,
-            derivation=f"Standard premium for {company.country}",
+            derivation=derivation,
             rationale=rationale,
         )
     )
@@ -412,8 +420,16 @@ def compute_wacc(
                 f"x (1 - {tax_rate * 100:.0f}%)"
             ),
             rationale=(
-                "Capital structure weights use market value of equity and book "
-                "value of debt, the conventional treatment."
+                "Capital structure weights use market value of equity and book value of debt, the "
+                "conventional treatment. "
+                + (
+                    f"Debt is {debt_weight * 100:.0f}% of capital — economically immaterial — so the "
+                    f"WACC is effectively the cost of equity; the debt term does not meaningfully "
+                    f"move it."
+                    if debt_weight < 0.05
+                    else
+                    f"Debt funds {debt_weight * 100:.0f}% of capital and is weighted accordingly."
+                )
             ),
             bounds=config.WACC_BOUNDS,
             clamped=wacc != raw_wacc,

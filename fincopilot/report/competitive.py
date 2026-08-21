@@ -53,10 +53,11 @@ class ManagementClaim:
 
     topic: str
     management_statement: str    # an actual claim/guidance from the filings
-    source: str                  # where it came from (filing, period)
-    our_interpretation: str      # what we take it to mean
-    our_model: str               # what we actually model
-    difference: str              # aligned, or how/why we differ
+    source: str                  # where it came from (filing / form)
+    source_date: str = ""        # the source's date/period (e.g. "FY2026 10-K, Feb 2026")
+    our_interpretation: str = ""  # what we take it to mean
+    our_model: str = ""          # the QUANTIFIED model impact (assumption + number)
+    difference: str = ""         # the measurable financial consequence of our view vs theirs
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -168,13 +169,15 @@ Produce:
 3. moat_summary: 1-2 sentences tying strength AND direction to whether they defend our assumed terminal margin
 4. dimensions: assess each source of advantage that applies — software/ecosystem, hardware, switching costs, scale, network effects, customer relationships, technology leadership. Each: dimension, assessment (one line), strength (Strong / Moderate / Weak / None)
 5. competitive_threats: 2-4 specific threats to the advantage
-6. management_vs_us: 3-4 topics where an ACTUAL sourced management statement meets our view. Each: topic, management_statement (real quote/paraphrase — do NOT invent), source (filing/period), our_interpretation, our_model (what we model), difference. Omit any topic where you cannot cite a real statement.
+6. management_vs_us: 3-4 topics where an ACTUAL sourced management statement meets our view. Each: topic, management_statement (real quote/paraphrase — do NOT invent), source (the filing/form), source_date (the source's date or period, e.g. "FY2026 10-K, Feb 2026"), our_interpretation, our_model, difference. Omit any topic where you cannot cite a real statement.
+   - our_model must be the QUANTIFIED financial-model consequence — name the specific assumption AND its number (e.g. "we normalize terminal operating margin from ~60% today to 48%", "we fade year-1 growth from 33% toward the terminal rate"). Do NOT restate the qualitative claim; translate it into a modelled number.
+   - difference must state the MEASURABLE consequence of the gap between management's view and ours (e.g. "we assign a -12pp terminal-margin haircut management does not", "≈USD X per share of downside"). If we genuinely agree, say so and give the shared modelled number — never a bare "None".
 
 Return JSON:
 {{"moat_strength": "...", "moat_direction": "...", "moat_summary": "...",
   "dimensions": [{{"dimension": "...", "assessment": "...", "strength": "..."}}],
   "competitive_threats": ["..."],
-  "management_vs_us": [{{"topic": "...", "management_statement": "...", "source": "...", "our_interpretation": "...", "our_model": "...", "difference": "..."}}]}}"""
+  "management_vs_us": [{{"topic": "...", "management_statement": "...", "source": "...", "source_date": "...", "our_interpretation": "...", "our_model": "...", "difference": "..."}}]}}"""
 
 
 def _fallback(valuation) -> CompetitiveAnalysis:
@@ -240,6 +243,7 @@ def generate_competitive(
             topic=_str(entry, "topic"),
             management_statement=_str(entry, "management_statement"),
             source=_str(entry, "source"),
+            source_date=_str(entry, "source_date"),
             our_interpretation=_str(entry, "our_interpretation"),
             our_model=_str(entry, "our_model"),
             difference=_str(entry, "difference"),

@@ -370,7 +370,7 @@
     {% for m in cp.management_vs_us %}
       <tr>
         <td><strong>{{ m.topic }}</strong></td>
-        <td style="text-align:left;">{{ m.management_statement }}{% if m.source %}<br><span style="color:var(--muted);font-size:11px;">Source: {{ m.source }}</span>{% endif %}</td>
+        <td style="text-align:left;">{{ m.management_statement }}{% if m.source %}<br><span style="color:var(--muted);font-size:11px;">Source: {{ m.source }}{% if m.source_date %} · {{ m.source_date }}{% endif %}</span>{% endif %}</td>
         <td style="text-align:left;">{{ m.our_interpretation }}{% if m.our_model %}<br><span style="color:var(--muted);font-size:11px;">We model: {{ m.our_model }}</span>{% endif %}</td>
         <td style="text-align:left;">{{ m.difference }}</td>
       </tr>

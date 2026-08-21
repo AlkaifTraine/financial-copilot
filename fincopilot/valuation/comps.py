@@ -156,4 +156,24 @@ def build_comps(
             f"to trailing EPS of {eps:.2f}."
         )
 
+    # Methodology: trailing P/E is a weak primary lens for a fast grower — earnings
+    # lag revenue, so the multiple looks high on trailing profit and understates a
+    # scaling name. Show the growth-relevant multiples alongside, and be explicit that
+    # this whole section is a market-based CROSS-CHECK, not an input to the intrinsic DCF.
+    peer_growth = _median([p.revenue_growth for p in median_peers if p.revenue_growth is not None])
+    lenses = []
+    if result.median_ev_sales:
+        lenses.append(f"EV/Sales {result.median_ev_sales:.1f}x")
+    ebitda = _median([p.ev_to_ebitda for p in median_peers if p.ev_to_ebitda is not None])
+    if ebitda:
+        lenses.append(f"EV/EBITDA {ebitda:.1f}x")
+    if lenses or peer_growth:
+        note = "Multiple choice: trailing P/E overstates the multiple for a high-growth name "
+        note += "(earnings lag revenue), so read it with the growth-relevant peer multiples"
+        note += (" — " + ", ".join(lenses)) if lenses else ""
+        if peer_growth:
+            note += f" (direct-peer median revenue growth {peer_growth * 100:.0f}%)"
+        note += ". These comps are a market-based cross-check, not blended into the intrinsic DCF."
+        result.notes.append(note)
+
     return result

@@ -515,7 +515,10 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             for claim in cp["management_vs_us"]:
                 statement = claim.get("management_statement", "")
                 if claim.get("source"):
-                    statement += f'<br/><font size="6.5" color="#7c8794">Source: {claim["source"]}</font>'
+                    dated = claim["source"]
+                    if claim.get("source_date"):
+                        dated += f' &middot; {claim["source_date"]}'
+                    statement += f'<br/><font size="6.5" color="#7c8794">Source: {dated}</font>'
                 view = claim.get("our_interpretation", "")
                 if claim.get("our_model"):
                     view += f'<br/><font size="6.5" color="#7c8794">We model: {claim["our_model"]}</font>'
