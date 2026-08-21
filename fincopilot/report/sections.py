@@ -171,13 +171,17 @@ def _normalise_citations(text: str, evidence_count: int) -> str:
 
 
 def _evidence_from(result) -> list[Evidence]:
+    # A generous window of the cited chunk is retained (not just 300 chars): the snippet
+    # is not displayed — it is the source text the reliability check matches prose figures
+    # against — so a wider window traces more legitimately-cited filing numbers and keeps
+    # the "unverified figures" rate honest rather than inflated by truncation.
     return [
         Evidence(
             doc_title=passage.chunk.doc_title,
             section=passage.chunk.section,
             page=passage.chunk.page,
             source_url=passage.chunk.source_url,
-            snippet=passage.chunk.body[:300],
+            snippet=passage.chunk.body[:1200],
         )
         for passage in result.passages
     ]

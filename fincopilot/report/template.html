@@ -749,6 +749,46 @@
     {{ r.reliability.citation_coverage_pct }}% citation coverage. "Unverified" flags figures we could not auto-trace —
     a prompt to verify, not proof of error.</span>
   </p>
+  {% if r.reliability.unverified %}
+  <details id="fc-reliability-review" style="margin-top:6px;font-size:12.5px;">
+    <summary style="cursor:pointer;"><strong>Reliability review — {{ r.reliability.unverified_count }} unverified figure(s)</strong> (click one to jump to it in the report)</summary>
+    <ul class="fc-bullets" style="margin-top:6px;">
+      {% for u in r.reliability.unverified %}
+      <li><a href="#" class="fc-jump" data-fig="{{ u.figure }}" data-ctx="{{ u.context|replace('…','')|trim|truncate(45, true, '') }}"><strong>{{ u.figure }}</strong></a>
+        <span style="color:var(--muted);"> · {{ u.location }} — {{ u.context }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  <script>
+  (function () {
+    var review = document.getElementById('fc-reliability-review');
+    function insideReview(node) {
+      for (var el = node.parentNode; el; el = el.parentElement) { if (el === review) return true; }
+      return false;
+    }
+    function jumpTo(fig, ctx) {
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+      var node, hit = null;
+      while ((node = walker.nextNode())) {
+        if (insideReview(node) || node.nodeValue.indexOf(fig) === -1) continue;
+        if (!hit) hit = node;
+        if (ctx && node.parentNode.textContent.indexOf(ctx) !== -1) { hit = node; break; }
+      }
+      if (!hit) return;
+      var target = hit.parentNode;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var prev = target.style.backgroundColor;
+      target.style.transition = 'background-color .4s'; target.style.backgroundColor = '#fff2a8';
+      setTimeout(function () { target.style.backgroundColor = prev; }, 2400);
+    }
+    (review ? review.querySelectorAll('.fc-jump') : []).forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault(); jumpTo(a.getAttribute('data-fig'), a.getAttribute('data-ctx'));
+      });
+    });
+  })();
+  </script>
+  {% endif %}
   {% endif %}
   {% if r.warnings %}
   <h2 class="fc-h">Model Notes and Limitations</h2>
