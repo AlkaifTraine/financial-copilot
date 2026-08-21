@@ -132,6 +132,8 @@ class Catalyst:
     direction: str               # Positive / Negative / Two-sided
     metric: str                  # the figure it would move
     status: str = "upcoming"     # "upcoming" or "passed" (set by classify_catalysts)
+    source: str = "Model-inferred"  # provenance: Company-announced / Calendar-sourced /
+                                     # External-source / Model-inferred
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -224,12 +226,14 @@ The report's as-of date is {as_of}. Everything below is forward-looking from THA
 
 Produce two things.
 
-1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing, direction (Positive / Negative / Two-sided), metric (what it moves).
+1. catalysts: 3-5 FUTURE events that could move the stock — every one must fall AFTER {as_of}. Do NOT list an earnings date or event that has already happened by then (e.g. a quarter that reported before {as_of}). Each: event, timing, direction (Positive / Negative / Two-sided), metric (what it moves), source (provenance — see below).
    For `timing`, give the CALENDAR month and year the event occurs (for an earnings release, the month it will be REPORTED), e.g. "February 2027". If you also cite a fiscal quarter, write it in full — "Q4 FY2027", never a run-together form like "Q42027" — and make the calendar month CONSISTENT with it. Fiscal years are often offset: a January fiscal year-end means Q1 ends ~April of the calendar year BEFORE the fiscal-year name (Q1 FY2027 ends ~April 2026, reports ~May 2026). Never let the fiscal label and the calendar month disagree.
+   For `source`, label the event's PROVENANCE honestly — one of: "Company-announced" (a date or event the company itself has stated in a filing/press release), "Regulatory/calendar" (a scheduled regulatory or exchange date), "External-source" (from the retrieved context above), or "Model-inferred" (a plausible event YOU are projecting, not an announced fact). If you are estimating that an event will happen, it is Model-inferred — never dress an inference as an announced fact.
 2. watch_items: 4-6 metrics to monitor, each tied to a SPECIFIC model assumption it tests. Each: metric, assumption (the model assumption it checks — quote our number), current (latest reading), trend (direction of travel), expected (what our assumption implies it should do), bull_bear (the value/trend that would make us more bullish, and the one that would make us more bearish).
+   These are FORWARD-looking triggers: every threshold/condition in `expected` and `bull_bear` must reference a FUTURE period (a quarter or fiscal year AFTER {as_of}). Never phrase a trigger against a period already reported by {as_of} (e.g. "margin stays above X in FY2024" when FY2024 is historical); if you cite a past reading, label it explicitly as a historical observation, not a forward trigger.
 
 Return JSON:
-{{"catalysts": [{{"event": "...", "timing": "...", "direction": "...", "metric": "..."}}],
+{{"catalysts": [{{"event": "...", "timing": "...", "direction": "...", "metric": "...", "source": "..."}}],
   "watch_items": [{{"metric": "...", "assumption": "...", "current": "...", "trend": "...", "expected": "...", "bull_bear": "..."}}]}}"""
 
 
@@ -325,6 +329,7 @@ def anchor_earnings_catalysts(catalysts: list["Catalyst"], dates: list) -> int:
         except StopIteration:
             break
         catalyst.timing = f"{_MONTH_NAMES[moment.month]} {moment.day}, {moment.year}"
+        catalyst.source = "Calendar-sourced"   # real published earnings date, not inferred
         anchored += 1
     return anchored
 
@@ -371,6 +376,7 @@ def generate_forward(
             timing=_str(entry, "timing"),
             direction=_str(entry, "direction") or "Two-sided",
             metric=_str(entry, "metric"),
+            source=_str(entry, "source") or "Model-inferred",
         )
         for entry in (payload.get("catalysts") or [])
         if isinstance(entry, dict) and _str(entry, "event")

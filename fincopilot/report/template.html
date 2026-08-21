@@ -315,7 +315,7 @@
         <td><strong>{{ risk.risk }}</strong>{% if risk.description %}<br><span style="color:var(--muted);font-size:11.5px;">{{ risk.description }}</span>{% endif %}</td>
         <td style="text-align:left;white-space:nowrap;">{{ risk.probability }}</td>
         <td style="text-align:left;">{{ risk.financial_impact }}</td>
-        <td style="text-align:left;">{{ risk.valuation_impact }}</td>
+        <td style="text-align:left;">{{ risk.valuation_impact }}{% if risk.basis %}<br><span style="color:var(--muted);font-size:11px;">Basis: {{ risk.basis }}</span>{% endif %}</td>
         <td style="text-align:left;">{{ risk.early_warning }}</td>
       </tr>
     {% endfor %}
@@ -420,7 +420,7 @@
     <tbody>
     {% for c in r.forward.catalysts %}
       <tr>
-        <td><strong>{{ c.event }}</strong></td>
+        <td><strong>{{ c.event }}</strong>{% if c.source %}<br><span style="color:var(--muted);font-size:11px;">{{ c.source }}</span>{% endif %}</td>
         <td style="text-align:left;white-space:nowrap;">{{ c.timing }}</td>
         <td style="text-align:left;white-space:nowrap;">{{ c.direction }}</td>
         <td style="text-align:left;">{{ c.metric }}</td>

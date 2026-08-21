@@ -40,6 +40,9 @@ class QuantifiedRisk:
     financial_impact: str = ""   # what it hits, sized where possible
     valuation_impact: str = ""   # effect on fair value, anchored to a number
     early_warning: str = ""      # the single indicator that it is starting
+    basis: str = ""              # provenance of the numeric estimates: Historical /
+                                 # Sensitivity analysis / Scenario / Analyst estimate /
+                                 # Model inference
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -144,13 +147,14 @@ Identify the material risks to the investment case. For each, give:
 - risk: a short, specific name (under 8 words)
 - description: one sentence on the mechanism — how it actually damages the business
 - probability: exactly one of Low / Medium / High, optionally with a 2-3 word qualifier
-- financial_impact: what it hits and roughly how big, tied to a segment or a figure
+- financial_impact: what it hits and roughly how big, tied to a segment or a figure. State the segment/denominator explicitly (a reportable SEGMENT % is not an end-market %).
 - valuation_impact: the effect on fair value, anchored to a number from the analysis above
 - early_warning: the single observable metric that would show this starting to happen
+- basis: the PROVENANCE of your numeric estimates in this risk — exactly one of "Historical" (sized from reported figures), "Sensitivity analysis" (from the model's own sensitivity), "Scenario" (from our bear/bull cases), "Analyst estimate" (from an external source above), or "Model inference" (a size YOU are judging without a direct source). If any figure is your own judgement, the basis is Model inference — do not imply a sourced number where there is none.
 
 Return JSON:
 {{"risks": [
-  {{"risk": "...", "description": "...", "probability": "...", "financial_impact": "...", "valuation_impact": "...", "early_warning": "..."}}
+  {{"risk": "...", "description": "...", "probability": "...", "financial_impact": "...", "valuation_impact": "...", "early_warning": "...", "basis": "..."}}
 ]}}"""
 
 
@@ -179,6 +183,7 @@ def _fallback(history: FinancialHistory, valuation) -> RiskAssessment:
                 if bear_txt else f"{valuation.upside * 100:+.0f}% to our intrinsic value."
             ),
             early_warning="A quarter of revenue or margins below consensus.",
+            basis="Scenario",
         ))
 
     # 2. Growth-normalisation risk, from the reverse-DCF growth gap.
@@ -198,6 +203,7 @@ def _fallback(history: FinancialHistory, valuation) -> RiskAssessment:
                 f"{growth_row.base_display}; closing that gap is the downside."
             ),
             early_warning="Year-on-year revenue growth decelerating below the implied path.",
+            basis="Sensitivity analysis",
         ))
 
     return RiskAssessment(risks=risks, generated=False)
@@ -247,6 +253,7 @@ def generate_risks(
             financial_impact=_str(entry, "financial_impact"),
             valuation_impact=_str(entry, "valuation_impact"),
             early_warning=_str(entry, "early_warning"),
+            basis=_str(entry, "basis") or "Model inference",
         ))
 
     if not risks:

@@ -10,9 +10,13 @@ from __future__ import annotations
 from fincopilot.report.models import Evidence, ReportModel, Section
 from fincopilot.report.qa import (
     audit_citations,
+    check_consensus_scenario,
     check_consistency,
+    check_forward_period_staleness,
     check_metric_semantics,
+    check_quarterly_annualization,
     check_risk_direction,
+    check_segment_end_market,
     run_qa,
 )
 
@@ -224,3 +228,74 @@ class TestMetricSemantics:
         report = self._report("Quarterly revenue growth rate", assumption="Our 65% YoY FY2026 growth")
         run_qa(report)
         assert report.blocked is False
+
+
+class TestFinancialTypeSafety:
+    """Advisory validators: segment/end-market, quarter-as-annual, stale forward
+    triggers, consensus-vs-scenario. All flag, none block."""
+
+    def _with_sections(self, *paragraphs):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.sections = [Section(key="s", title="S", paragraphs=list(paragraphs),
+                                   evidence=_evidence(2))]
+        return report
+
+    def test_segment_vs_endmarket_contradiction_flagged(self):
+        report = self._with_sections(
+            "The Compute & Networking segment generated $193.5B, roughly 90% of FY2026 revenue [1].",
+            "Customer concentration is high in Compute & Networking, about 60% of revenue [2].",
+        )
+        issues = check_segment_end_market(report)
+        assert any("conflated" in i.lower() for i in issues)
+
+    def test_consistent_segment_share_not_flagged(self):
+        report = self._with_sections(
+            "Compute & Networking was 90% of FY2026 revenue [1]; it remained about 90% of revenue [2].",
+        )
+        assert check_segment_end_market(report) == []
+
+    def test_quarter_annualized_as_annual_flagged(self):
+        report = self._with_sections(
+            "The $78B Q1 FY2027 guidance annualized implies about 14% growth over FY2026 [1].",
+        )
+        assert any("run-rate" in i.lower() for i in check_quarterly_annualization(report))
+
+    def test_labelled_run_rate_not_flagged(self):
+        report = self._with_sections(
+            "The $78B Q1 figure is a ~$312B run-rate (4x the quarter), not annual guidance [1].",
+        )
+        assert check_quarterly_annualization(report) == []
+
+    def test_stale_forward_trigger_flagged(self):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.canonical_metrics = [{"key": "rev", "label": "Revenue", "value": 1.0,
+                                     "unit": "currency", "period": "FY2026", "definition": "x"}]
+        report.forward = {"watch_items": [{
+            "metric": "Operating margin", "assumption": "x", "current": "x", "trend": "x",
+            "expected": "Operating margin remains above 54% in FY2024", "bull_bear": "x",
+        }]}
+        assert any("historical" in i.lower() for i in check_forward_period_staleness(report))
+
+    def test_future_trigger_not_flagged(self):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.canonical_metrics = [{"key": "rev", "label": "Revenue", "value": 1.0,
+                                     "unit": "currency", "period": "FY2026", "definition": "x"}]
+        report.forward = {"watch_items": [{
+            "metric": "Operating margin", "assumption": "x", "current": "x", "trend": "x",
+            "expected": "Operating margin stays above 54% through FY2028", "bull_bear": "x",
+        }]}
+        assert check_forward_period_staleness(report) == []
+
+    def test_consensus_tied_to_scenario_probability_flagged(self):
+        report = self._with_sections(
+            "The $300 analyst consensus assumes our 25% bull-case probability [1].",
+        )
+        assert any("distinct" in i.lower() for i in check_consensus_scenario(report))
+
+    def test_all_type_safety_checks_are_advisory(self):
+        report = self._with_sections(
+            "Compute & Networking was 90% of FY2026 revenue [1]; also Compute & Networking ~60% of revenue [2].",
+            "The $78B Q1 FY2027 guidance annualized implies 14% growth over FY2026 [1].",
+        )
+        run_qa(report)
+        assert report.blocked is False   # advisory only, never blocks

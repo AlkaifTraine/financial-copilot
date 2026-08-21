@@ -287,6 +287,162 @@ def check_metric_semantics(report) -> list[str]:
     return issues
 
 
+# ---------------------------------------------------------------------------
+# Financial type-safety: every number must carry the right dimension. These are
+# advisory heuristics over prose — they catch real category errors (a segment %
+# read as an end-market %, a quarter annualised as a year, a past period cited as
+# a forward trigger, our scenario probability pinned on external consensus) but,
+# being regex over language, they inform rather than gate.
+# ---------------------------------------------------------------------------
+
+def _section_prose(report) -> str:
+    parts: list[str] = []
+    for section in getattr(report, "sections", None) or []:
+        parts.extend([section.summary, *section.paragraphs, *section.bullets, section.implication])
+    return " ".join(p for p in parts if p)
+
+
+def _risk_prose(report) -> str:
+    parts: list[str] = []
+    for risk in (report.risks or []):
+        parts.extend([risk.get("financial_impact", ""), risk.get("valuation_impact", ""),
+                      risk.get("description", "")])
+    return " ".join(p for p in parts if p)
+
+
+def _assumption_prose(report) -> str:
+    parts: list[str] = []
+    for item in (getattr(report, "assumptions", None) or []):
+        if isinstance(item, dict):
+            parts.append(item.get("derivation", ""))
+            parts.append(item.get("rationale", ""))
+            prov = item.get("provenance")
+            if isinstance(prov, dict):
+                parts.extend(str(v) for v in prov.values())
+    return " ".join(p for p in parts if p)
+
+
+def _sentences(text: str) -> list[str]:
+    return re.split(r"(?<=[.!?])\s+", text)
+
+
+_PCT_OF_REVENUE = re.compile(
+    r"~?\s*(\d{1,3}(?:\.\d+)?)\s*%\s+of\s+"
+    r"(?:its\s+|the\s+|total\s+|approximately\s+|about\s+)*(?:fy\s?20\d\d\s+)?(?:total\s+)?revenue",
+    re.I,
+)
+_PROPER_PHRASE = re.compile(r"[A-Z][A-Za-z0-9.+/-]*(?:\s+(?:&|and|[A-Z][A-Za-z0-9.+/-]*)){0,3}")
+_GENERIC_LEAD = {"the", "its", "total", "approximately", "about", "revenue", "and", "a", "an",
+                 "of", "customer", "company", "management", "gaap"}
+
+
+def check_segment_end_market(report) -> list[str]:
+    """The same named line must not appear with two incompatible shares of revenue.
+
+    Catches a reportable SEGMENT share (Compute & Networking ~90% of revenue) being
+    conflated with an END-MARKET share (~60%): same name, two far-apart denominators.
+    Works sentence by sentence — the named line is the proper-noun phrase nearest to
+    the "N% of revenue" clause — so a "$193.5B" figure between them is not a barrier.
+    """
+    text = _section_prose(report) + " " + _risk_prose(report)
+    seen: dict[str, list[float]] = {}
+    for sentence in _sentences(text):
+        pct = _PCT_OF_REVENUE.search(sentence)
+        if not pct:
+            continue
+        name = None
+        for candidate in reversed(_PROPER_PHRASE.findall(sentence[:pct.start()])):
+            trimmed = re.sub(r"^(?:The|A|An|Its|Our|This|Their)\s+", "", candidate).strip()
+            if trimmed and trimmed.lower() not in _GENERIC_LEAD and len(trimmed) >= 4:
+                name = trimmed
+                break
+        if name is None:
+            continue
+        seen.setdefault(name.lower(), []).append(float(pct.group(1)))
+    issues: list[str] = []
+    for name, pcts in seen.items():
+        if len(pcts) >= 2 and max(pcts) - min(pcts) > 15:
+            issues.append(
+                f'"{name.title()}" appears as both {min(pcts):g}% and {max(pcts):g}% of revenue — a '
+                f'>15pp gap suggests a reportable-SEGMENT share and an END-MARKET share are being '
+                f'conflated. State each denominator (segment vs end-market, and the period) explicitly.'
+            )
+    return issues
+
+
+_ANNUALIZE = re.compile(r"annualiz", re.I)
+_QUARTER_REF = re.compile(r"\bQ[1-4]\b|\bquarter", re.I)
+_RUN_RATE = re.compile(r"run[- ]rate", re.I)
+
+
+def check_quarterly_annualization(report) -> list[str]:
+    """Flag a single quarter annualised and passed off as an annual figure."""
+    text = _section_prose(report) + " " + _assumption_prose(report)
+    issues: list[str] = []
+    for sentence in _sentences(text):
+        if _ANNUALIZE.search(sentence) and _QUARTER_REF.search(sentence) and not _RUN_RATE.search(sentence):
+            issues.append(
+                'A single quarter appears to be annualised without being labelled a run-rate: '
+                f'"{sentence.strip()[:120]}". Compare a quarter to the year-ago QUARTER, or label a '
+                f'4x figure a "run-rate" — never as annual guidance.'
+            )
+    return issues
+
+
+def _latest_reported_fy(report) -> int | None:
+    years = [
+        int(m.group(1))
+        for metric in (report.canonical_metrics or [])
+        for m in [re.search(r"FY\s?(20\d\d)", str(metric.get("period", "")))]
+        if m
+    ]
+    return max(years) if years else None
+
+
+_FORWARD_TRIGGER = re.compile(
+    r"remain|stay|declin|fall|drop|rise|below|above|by\s+fy|reach|exceed|hold|sustain", re.I
+)
+
+
+def check_forward_period_staleness(report) -> list[str]:
+    """A forward-looking watch trigger must not be keyed to an already-reported year."""
+    latest = _latest_reported_fy(report)
+    if latest is None:
+        return []
+    issues: list[str] = []
+    for item in (report.forward or {}).get("watch_items", []):
+        for field_name in ("expected", "bull_bear"):
+            value = item.get(field_name, "") or ""
+            for match in re.finditer(r"FY\s?(20\d\d)", value):
+                if int(match.group(1)) <= latest and _FORWARD_TRIGGER.search(value):
+                    issues.append(
+                        f'A watch trigger is keyed to FY{match.group(1)} ("{value.strip()[:80]}"), but '
+                        f'FY{latest} is the latest reported year, so FY{match.group(1)} is historical. A '
+                        f'forward trigger must reference a FUTURE period or be labelled a past observation.'
+                    )
+                    break
+    return issues
+
+
+_CONSENSUS = re.compile(r"consensus|analyst(?:s'?)?\s+(?:target|price\s+target|estimate)", re.I)
+_OUR_SCENARIO = re.compile(r"\b(?:bull|bear|base)\b.{0,20}(?:case|probability|scenario)|probability", re.I)
+_ATTRIBUTION = re.compile(r"assume|impl(?:y|ies)|reflect|bake[sd]?|price[sd]?\s+in", re.I)
+
+
+def check_consensus_scenario(report) -> list[str]:
+    """Flag our internal scenario probability being attributed to external consensus."""
+    issues: list[str] = []
+    for sentence in _sentences(_section_prose(report)):
+        if (_CONSENSUS.search(sentence) and _ATTRIBUTION.search(sentence)
+                and _OUR_SCENARIO.search(sentence) and re.search(r"\d{1,3}\s*%", sentence)):
+            issues.append(
+                'External consensus is being tied to our internal scenario probability: '
+                f'"{sentence.strip()[:130]}". The consensus/target is what the market believes; the '
+                f'bull/bear probabilities are ours — keep the two distinct.'
+            )
+    return issues
+
+
 def run_qa(report) -> list[str]:
     """Run every QA pass; classify findings; set the publication gate.
 
@@ -306,11 +462,17 @@ def run_qa(report) -> list[str]:
     # numeric/structural facts, not judgement calls.
     blocking = citation + consistency + metric
 
-    # Directional and period/comparison checks are regex heuristics over prose: they
-    # catch real errors but can misread benign phrasing, so they are ADVISORY —
-    # surfaced in the report's QA notes for the reader to weigh, never a hard gate
-    # that withholds the report.
-    advisory = direction + semantics
+    # Directional, period/comparison and financial-type-safety checks are regex
+    # heuristics over prose: they catch real errors but can misread benign phrasing,
+    # so they are ADVISORY — surfaced in the report's QA notes for the reader to
+    # weigh, never a hard gate that withholds the report.
+    advisory = (
+        direction + semantics
+        + check_segment_end_market(report)
+        + check_quarterly_annualization(report)
+        + check_forward_period_staleness(report)
+        + check_consensus_scenario(report)
+    )
 
     for issue in blocking + advisory:
         log.info("QA: %s", issue)

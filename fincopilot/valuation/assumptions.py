@@ -137,7 +137,7 @@ Propose three forward assumptions. Ground each in the history and the commentary
 
 For each, give a one-sentence rationale AND expose its PROVENANCE — the evidence chain that leads to your number. Each provenance field is a short phrase; use "n/a" only when the evidence genuinely does not exist (do not invent it):
 - historical: what the company's own reported history shows on this metric
-- guidance: current management guidance on it, if any (with its period)
+- guidance: current management guidance on it, if any (WITH its period). Never annualize a single quarter's guidance as if it were full-year guidance. If guidance is one quarter (e.g. a ~$78B Q1 number), compare it as a QUARTERLY figure (quarter-over-quarter or quarter YoY); if you must express a run-rate, label it a "run-rate" (4x the quarter) explicitly and never call it annual guidance.
 - industry: relevant industry / end-market evidence
 - competitive: competitive dynamics bearing on it
 - management: specific management commentary you are relying on

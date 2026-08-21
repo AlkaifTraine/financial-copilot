@@ -437,11 +437,14 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             risk_cell = f"<b>{name}</b>"
             if description:
                 risk_cell += f'<br/><font size="6.8" color="#7c8794">{description}</font>'
+            valuation_cell = risk.get("valuation_impact", "")
+            if risk.get("basis"):
+                valuation_cell += f'<br/><font size="6.5" color="#7c8794">Basis: {risk["basis"]}</font>'
             rows.append([
                 Paragraph(risk_cell, styles["cell"]),
                 Paragraph(risk.get("probability", ""), styles["cell"]),
                 Paragraph(risk.get("financial_impact", ""), styles["cell"]),
-                Paragraph(risk.get("valuation_impact", ""), styles["cell"]),
+                Paragraph(valuation_cell, styles["cell"]),
                 Paragraph(risk.get("early_warning", ""), styles["cell"]),
             ])
         widths = [CONTENT_WIDTH * w for w in (0.22, 0.11, 0.23, 0.22, 0.22)]
@@ -548,8 +551,11 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             header = ["Event", "Timing", "Direction", "Moves"]
             rows = [[Paragraph(h, styles["cellb"]) for h in header]]
             for cat in fw["catalysts"]:
+                event_cell = f"<b>{cat.get('event', '')}</b>"
+                if cat.get("source"):
+                    event_cell += f'<br/><font size="6.5" color="#7c8794">{cat["source"]}</font>'
                 rows.append([
-                    Paragraph(f"<b>{cat.get('event', '')}</b>", styles["cell"]),
+                    Paragraph(event_cell, styles["cell"]),
                     Paragraph(cat.get("timing", ""), styles["cell"]),
                     Paragraph(cat.get("direction", ""), styles["cell"]),
                     Paragraph(cat.get("metric", ""), styles["cell"]),
