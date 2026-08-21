@@ -18,6 +18,8 @@ from fincopilot.report.qa import (
     check_risk_direction,
     check_segment_end_market,
     check_segment_reconciliation,
+    check_annualization_arithmetic,
+    check_market_implied_claims,
     check_valuation_integrity,
     run_qa,
 )
@@ -371,3 +373,56 @@ class TestQaSeverityGate:
         ]}
         run_qa(report)
         assert report.blocked is True and report.qa_status == "FAILED"
+
+
+class TestReverseDcfTraceability:
+    """#2: a 'market implies X%' claim must trace to a reverse-DCF value."""
+
+    def _report(self, prose, implied):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.sections = [Section(key="t", title="Thesis", paragraphs=[prose], evidence=_evidence(2))]
+        report.priced_in = {"rows": [
+            {"label": lbl, "unit": "%", "implied_value": v, "reachable": True}
+            for lbl, v in implied
+        ]}
+        return report
+
+    def test_invented_margin_claim_flagged(self):
+        report = self._report(
+            "At today's price the market assumes >60% operating margins forever [1].",
+            [("Revenue CAGR", 0.256), ("Operating margin", 0.882)],
+        )
+        assert any("trace to the reverse" in i.lower() for i in check_market_implied_claims(report))
+
+    def test_traceable_claim_not_flagged(self):
+        report = self._report(
+            "The price requires the market to imply 26% revenue growth over the decade [1].",
+            [("Revenue CAGR", 0.256), ("Operating margin", 0.882)],
+        )
+        assert check_market_implied_claims(report) == []
+
+
+class TestAnnualizationArithmetic:
+    """#3 CRITICAL: a quarter annualized to a wrong YoY growth number blocks."""
+
+    def _report(self, prose, revenue=215.9e9):
+        report = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        report.canonical_metrics = [{"key": "revenue", "label": "Revenue", "value": revenue,
+                                     "unit": "currency", "period": "FY2026", "definition": "x"}]
+        report.sections = [Section(key="a", title="A", paragraphs=[prose], evidence=_evidence(2))]
+        return report
+
+    def test_wrong_annualized_growth_is_critical(self):
+        report = self._report("$78 billion Q1 guidance annualized implies ~14% growth over FY2026 [1].")
+        assert check_annualization_arithmetic(report)      # 78x4=312 -> ~45%, not 14%
+        run_qa(report)
+        assert report.blocked is True and report.qa_status == "FAILED"
+
+    def test_correct_run_rate_not_flagged(self):
+        report = self._report("$78 billion annualizes to a run-rate ~45% above the prior FY2026 year [1].")
+        assert check_annualization_arithmetic(report) == []
+
+    def test_annual_figure_not_treated_as_quarter(self):
+        # A full-year figure (4x would be implausible) must not trip the check.
+        report = self._report("$216 billion annualized is 30% growth over FY2025 [1].")
+        assert check_annualization_arithmetic(report) == []

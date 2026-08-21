@@ -106,8 +106,28 @@ def _facts(company: Company, history: FinancialHistory, valuation) -> str:
         if sc.expected_value:
             lines.append(f"Probability-weighted fair value: {cur} {sc.expected_value:,.2f}")
 
-    # Reverse DCF — what the market is pricing in.
-    if valuation.market_implied_growth is not None:
+    # Reverse DCF — what the market is pricing in. Feed the FULL computed table, so
+    # the prose describes what the price implies using ONLY these figures and never
+    # invents a market-implied margin or growth number.
+    pi = valuation.priced_in
+    if pi and pi.rows:
+        lines.append(
+            "Reverse DCF — what today's price implies (these are the ONLY figures you may use "
+            "for 'what the market prices in'; do NOT invent any other market-implied number):"
+        )
+        for row in pi.rows:
+            if row.implied_value is not None and row.reachable:
+                lines.append(
+                    f"  - {row.label}: the price implies {row.implied_display} "
+                    f"vs our base case {row.base_display}"
+                )
+            else:
+                reason = (row.note or "").strip() or "not reachable within a plausible range"
+                lines.append(
+                    f"  - {row.label}: the price CANNOT be justified by this lever alone "
+                    f"(our base is {row.base_display}; {reason})"
+                )
+    elif valuation.market_implied_growth is not None:
         lines.append(
             f"Reverse DCF: at today's price the market implies first-year revenue "
             f"growth of ~{valuation.market_implied_growth * 100:.0f}% (decaying)."
@@ -143,6 +163,8 @@ Non-negotiable rules:
 - Separate BUSINESS QUALITY (how good the company is) from STOCK ATTRACTIVENESS (whether to own it at this price). A great business can be a SELL if the price is too high. Never conflate the two.
 - Reason from the numbers you are given. The recommendation follows the valuation — do not argue toward a predetermined answer.
 - Be specific and quantitative. Tie every claim to a figure or a named fact.
+- SINGLE SOURCE OF TRUTH: every number you write must come from the figures provided above (the DCF, the assumptions, the scenarios, the reverse-DCF). Do NOT invent, round differently, or estimate your own numbers. Quote the model's values exactly.
+- MARKET-IMPLIED DISCIPLINE: when you say what the market "prices in" / "implies" / "expects", use ONLY the reverse-DCF figures listed above. If the table says a lever CANNOT justify the price alone, say exactly that — do NOT fabricate a percentage (e.g. never claim "the market assumes >60% margins" unless that exact figure is the computed implied value). The honest framing is usually: the price requires ~X% revenue CAGR versus our ~Y% base, so the valuation depends on a far more durable growth path than we assume.
 - Guidance discipline: every guidance figure must carry its period (a named quarter, a full fiscal year, a calendar year, or multi-year). Many companies (NVIDIA included) guide only ONE QUARTER ahead — never present single-quarter guidance as annual/full-year.
 - Frame the thesis as: what the market is pricing in vs what we expect vs why the gap matters.
 - No filler, no cheerleading, no "this underscores/highlights/demonstrates". Write like an analyst, not a summariser."""

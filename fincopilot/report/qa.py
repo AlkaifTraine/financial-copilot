@@ -443,6 +443,95 @@ def check_consensus_scenario(report) -> list[str]:
     return issues
 
 
+def _thesis_prose(report) -> str:
+    thesis = getattr(report, "thesis", None) or {}
+    if not isinstance(thesis, dict):
+        return ""
+    return " ".join(str(v) for v in thesis.values() if isinstance(v, str))
+
+
+_MARKET_IMPLIED = re.compile(
+    r"market\s+(?:implies|prices?\s+in|expects|assumes|is\s+pricing\s+in|bakes?\s+in|needs?)"
+    r"[^.]{0,70}?(\d{1,3}(?:\.\d+)?)\s*%[^.]{0,45}?(margin|growth|cagr|revenue)",
+    re.I,
+)
+
+
+def check_market_implied_claims(report) -> list[str]:
+    """Every 'the market implies X%' claim must trace to an actual reverse-DCF value (#2).
+
+    The reverse DCF is the only authority on what the price is pricing in. A prose
+    figure ("the market assumes >60% margins") that does not match a computed implied
+    value is invented and must be flagged.
+    """
+    rows = (getattr(report, "priced_in", None) or {}).get("rows", [])
+    implied = [
+        row["implied_value"] * 100
+        for row in rows
+        if row.get("unit") == "%" and row.get("implied_value") is not None and row.get("reachable", True)
+    ]
+    text = _section_prose(report) + " " + _thesis_prose(report)
+    issues: list[str] = []
+    for match in _MARKET_IMPLIED.finditer(text):
+        claimed = float(match.group(1))
+        subject = match.group(2).lower()
+        if not implied:
+            issues.append(
+                f'The text says the market implies {claimed:g}% {subject}, but the reverse DCF '
+                f'produced no reachable single-lever figure — this market-implied number is not '
+                f'traceable to the calculation.'
+            )
+        elif not any(abs(claimed - value) <= 3.0 for value in implied):
+            shown = ", ".join(f"{value:.0f}%" for value in implied)
+            issues.append(
+                f'The text says the market implies {claimed:g}% {subject}, which matches no '
+                f'reverse-DCF implied value (computed: {shown}). Every "market implies" figure '
+                f'must trace to the reverse DCF, not be invented.'
+            )
+    return issues
+
+
+_ANNUALIZE_ARITH = re.compile(
+    r"\$?\s*(\d{1,4}(?:\.\d+)?)\s*(?:billion|bn)\b[^.]{0,90}?annualiz[^.]{0,90}?"
+    r"(\d{1,3}(?:\.\d+)?)\s*%[^.]{0,45}?(?:growth|increase|above|versus|vs\.?|over|higher)"
+    r"[^.]{0,35}?(?:fy\s?20\d\d|prior[- ]year|last[- ]year|20\d\d|the\s+prior)",
+    re.I,
+)
+
+
+def check_annualization_arithmetic(report) -> list[str]:
+    """Deterministic (CRITICAL): a quarter annualised to a wrong YoY growth number (#3).
+
+    Uses the canonical full-year revenue: a "$X bn ... annualized ... Y% growth over
+    FY..." claim is checked by computing the real run-rate growth; if it is off by more
+    than 10 percentage points, the arithmetic is wrong and blocks publication.
+    """
+    revenue_bn = None
+    for metric in (report.canonical_metrics or []):
+        if metric.get("key") == "revenue" and metric.get("value"):
+            revenue_bn = metric["value"] / 1e9
+            break
+    if not revenue_bn:
+        return []
+    text = _section_prose(report) + " " + _assumption_prose(report) + " " + _thesis_prose(report)
+    issues: list[str] = []
+    for match in _ANNUALIZE_ARITH.finditer(text):
+        quarter_bn = float(match.group(1))
+        claimed_pct = float(match.group(2))
+        run_rate = quarter_bn * 4
+        # Guard: only treat the figure as a QUARTER if 4x is a plausible run-rate.
+        if not (0.5 * revenue_bn <= run_rate <= 3.0 * revenue_bn):
+            continue
+        correct_pct = (run_rate / revenue_bn - 1) * 100
+        if abs(correct_pct - claimed_pct) > 10:
+            issues.append(
+                f"Annualization arithmetic error: {quarter_bn:g}bn annualized is a {run_rate:g}bn "
+                f"run-rate, ~{correct_pct:.0f}% above {revenue_bn:.0f}bn revenue — not the "
+                f"{claimed_pct:g}% stated. A quarterly figure was annualized and mislabeled."
+            )
+    return issues
+
+
 def check_valuation_integrity(report) -> list[str]:
     """Deterministic guard against valuation double-counting (item #1).
 
@@ -499,9 +588,11 @@ CHECK_SEVERITY = {
     "canonical_metric": "CRITICAL",         # a figure contradicting a canonical value
     "valuation_integrity": "CRITICAL",      # double-counting / base-case != DCF
     "segment_reconciliation": "CRITICAL",   # segments don't sum to consolidated revenue
+    "annualization_arithmetic": "CRITICAL", # a quarter annualized to a wrong YoY number
     "citation": "HIGH",                     # grounding failure on a claim-heavy section
     "risk_direction": "HIGH",               # a downside risk that improves its metric
-    "quarterly_annualization": "HIGH",      # a quarter annualized as annual
+    "quarterly_annualization": "HIGH",      # a quarter annualized as annual (fuzzy)
+    "market_implied": "HIGH",               # a market-implied figure not traced to reverse DCF
     "consensus_scenario": "HIGH",           # our probability pinned on external consensus
     "segment_end_market": "HIGH",           # segment % conflated with end-market %
     "metric_semantics": "MEDIUM",           # a quarterly label on an annual figure
@@ -523,9 +614,11 @@ def run_qa(report) -> list[dict]:
         "canonical_metric": check_metric_consistency(report),
         "valuation_integrity": check_valuation_integrity(report),
         "segment_reconciliation": check_segment_reconciliation(report),
+        "annualization_arithmetic": check_annualization_arithmetic(report),
         "citation": audit_citations(report),
         "risk_direction": check_risk_direction(report),
         "quarterly_annualization": check_quarterly_annualization(report),
+        "market_implied": check_market_implied_claims(report),
         "consensus_scenario": check_consensus_scenario(report),
         "segment_end_market": check_segment_end_market(report),
         "metric_semantics": check_metric_semantics(report),
