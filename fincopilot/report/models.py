@@ -118,6 +118,7 @@ class ReportModel:
     blended: dict | None = None
     scenarios: dict | None = None
     sensitivity: dict | None = None
+    competition_sensitivity: dict | None = None
     comps: dict | None = None
     priced_in: dict | None = None      # reverse-DCF: what the price implies per driver
     segment_forecast: dict | None = None   # bottom-up segment forecast vs top-down total

@@ -323,6 +323,35 @@
   </table></div>
   {% endif %}
 
+  {# ---- competition -> fair value sensitivity ---- #}
+  {% if r.competition_sensitivity and r.competition_sensitivity.rows %}
+  {% set cs = r.competition_sensitivity %}
+  <h2 class="fc-h">Competition: Illustrative Model Sensitivity</h2>
+  <p style="font-size:12.5px;color:var(--ink-2);">
+    How a persistent loss of market share — a lower revenue-growth path — flows through to fair
+    value, holding margins and the discount rate fixed and re-running the SAME DCF. This is an
+    <strong>illustrative model sensitivity</strong>, not a forecast or a historical fact.
+  </p>
+  <div class="fc-scroll"><table class="fc-t">
+    <thead><tr><th>Scenario</th><th>10y CAGR</th><th>Terminal revenue</th><th>Fair value</th><th style="text-align:left;">vs base</th></tr></thead>
+    <tbody>
+      <tr style="font-weight:620;background:var(--surface-2);">
+        <td>Base case</td><td>&ndash;</td><td>{{ money(cs.base_terminal_revenue) }}</td>
+        <td>{{ fmt_price(cs.base_fair_value) }}</td><td style="text-align:left;">&ndash;</td>
+      </tr>
+      {% for row in cs.rows %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td>{{ pct(row.cagr) }}</td>
+        <td>{{ money(row.terminal_revenue) }} <span style="color:var(--muted);">({{ '%+.0f'|format(row.revenue_change * 100) }}%)</span></td>
+        <td>{{ fmt_price(row.fair_value) }}</td>
+        <td style="text-align:left;">{{ '%+.0f'|format(row.fair_value_change * 100) }}%</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+
   {# ---- competitive moat + management vs us ---- #}
   {% if r.competitive %}
   {% set cp = r.competitive %}

@@ -482,3 +482,28 @@ class TestValuationConfidence:
         level, drivers = _valuation_confidence(
             self._val(dispersion=0.5, terminal=0.5, dcf=100.0, comps=110.0))
         assert level == "High" and drivers == []
+
+
+class TestCompetitionSensitivity:
+    def _kw(self):
+        return dict(base_revenue=100e9, base_year=2026, growth_path=[0.30] * 10,
+                    margin_path=[0.40] * 10, tax_rate=0.15, depreciation_pct=0.03,
+                    capex_pct=0.04, working_capital_pct=0.02, wacc=0.10, terminal_growth=0.025,
+                    net_debt=0.0, shares_outstanding=1e9, currency="USD")
+
+    def test_share_loss_lowers_revenue_and_fair_value(self):
+        from fincopilot.valuation.sensitivity import build_competition_sensitivity
+        from fincopilot.valuation.dcf import run_dcf
+        kw = self._kw()
+        base_fv = run_dcf(**kw).fair_value_per_share
+        cs = build_competition_sensitivity(**kw, base_fair_value=base_fv)
+        assert len(cs.rows) == 3
+        fvs = [r["fair_value"] for r in cs.rows]
+        assert fvs == sorted(fvs, reverse=True)                     # bigger haircut, lower value
+        assert all(r["fair_value_change"] < 0 for r in cs.rows)
+        assert all(r["revenue_change"] < 0 for r in cs.rows)
+
+    def test_empty_without_base_value(self):
+        from fincopilot.valuation.sensitivity import build_competition_sensitivity
+        cs = build_competition_sensitivity(**self._kw(), base_fair_value=0.0)
+        assert cs.rows == []

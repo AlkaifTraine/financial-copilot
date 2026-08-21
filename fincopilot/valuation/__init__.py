@@ -230,6 +230,27 @@ def value_company(
         shares_outstanding=shares,
     )
 
+    # -- competition -> fair value sensitivity ----------------------------
+    # Translate a competitive share loss into revenue and fair-value terms, so the
+    # competition risk is a number a reader can weigh, not just a narrative.
+    from .sensitivity import build_competition_sensitivity
+    valuation.competition_sensitivity = build_competition_sensitivity(
+        base_revenue=inputs.base_revenue,
+        base_year=inputs.base_year,
+        growth_path=inputs.growth_path,
+        margin_path=inputs.margin_path,
+        tax_rate=inputs.tax_rate,
+        depreciation_pct=inputs.depreciation_pct,
+        capex_pct=inputs.capex_pct,
+        working_capital_pct=inputs.working_capital_pct,
+        wacc=wacc,
+        terminal_growth=inputs.terminal_growth,
+        net_debt=net_debt,
+        shares_outstanding=shares,
+        currency=history.currency,
+        base_fair_value=valuation.dcf.fair_value_per_share,
+    )
+
     # -- scenarios (bear / base / bull) -----------------------------------
     # A single fair value is a point estimate dressed up as a fact. The scenario
     # set moves the value drivers together into three coherent worlds, sized

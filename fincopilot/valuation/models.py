@@ -193,6 +193,25 @@ class SensitivityGrid:
 
 
 @dataclass
+class CompetitionSensitivity:
+    """Illustrative model sensitivity: how competition (share/growth loss) hits value.
+
+    Each row shifts the whole revenue-growth path down by a fixed number of points —
+    a persistent loss of share to a competitor — and re-runs the SAME DCF, so the
+    revenue and fair-value impacts are internally consistent. It is a MODEL
+    sensitivity, not a forecast or a historical fact.
+    """
+
+    base_fair_value: float = 0.0
+    base_terminal_revenue: float = 0.0
+    currency: str = "USD"
+    rows: list[dict] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class PeerMultiple:
     ticker: str
     name: str
@@ -528,6 +547,7 @@ class Valuation:
 
     dcf: DCFResult | None = None
     sensitivity: SensitivityGrid | None = None
+    competition_sensitivity: CompetitionSensitivity | None = None
     scenarios: ScenarioAnalysis | None = None
     comps: CompsResult | None = None
     blended: BlendedValuation | None = None
@@ -613,6 +633,9 @@ class Valuation:
             "currency": self.currency,
             "dcf": self.dcf.to_dict() if self.dcf else None,
             "sensitivity": self.sensitivity.to_dict() if self.sensitivity else None,
+            "competition_sensitivity": (
+                self.competition_sensitivity.to_dict() if self.competition_sensitivity else None
+            ),
             "scenarios": self.scenarios.to_dict() if self.scenarios else None,
             "comps": self.comps.to_dict() if self.comps else None,
             "blended": self.blended.to_dict() if self.blended else None,

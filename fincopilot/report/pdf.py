@@ -461,6 +461,36 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
         ]))
         story.append(table)
 
+    # -- competition -> fair value sensitivity ----------------------------
+    cs = report.competition_sensitivity
+    if cs and cs.get("rows"):
+        story.append(Paragraph("COMPETITION: ILLUSTRATIVE MODEL SENSITIVITY", styles["h2"]))
+        story.append(Paragraph(
+            "How a persistent loss of market share — a lower revenue-growth path — flows through "
+            "to fair value, holding margins and the discount rate fixed and re-running the same "
+            "DCF. An <b>illustrative model sensitivity</b>, not a forecast or a historical fact.",
+            styles["small"],
+        ))
+        story.append(Spacer(1, 3))
+        rows = [["Scenario", "10y CAGR", "Terminal revenue", "Fair value", "vs base"]]
+        rows.append([
+            "Base case", "-", _money(cs["base_terminal_revenue"]),
+            f"{currency} {cs['base_fair_value']:,.2f}", "-",
+        ])
+        for row in cs["rows"]:
+            rows.append([
+                row["label"], _pct(row["cagr"]),
+                f"{_money(row['terminal_revenue'])} ({row['revenue_change'] * 100:+.0f}%)",
+                f"{currency} {row['fair_value']:,.2f}", f"{row['fair_value_change'] * 100:+.0f}%",
+            ])
+        widths = [CONTENT_WIDTH * w for w in (0.30, 0.14, 0.26, 0.16, 0.14)]
+        table = _table(rows, widths, styles)
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 1), (-1, 1), SURFACE_2),
+            ("FONTNAME", (0, 1), (0, 1), "Helvetica-Bold"),
+        ]))
+        story.append(table)
+
     # -- competitive moat + management vs us ------------------------------
     cp = report.competitive
     if cp:

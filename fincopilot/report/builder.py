@@ -262,6 +262,8 @@ def build_report(
         report.scenarios = valuation.scenarios.to_dict()
     if valuation.sensitivity:
         report.sensitivity = valuation.sensitivity.to_dict()
+    if valuation.competition_sensitivity and valuation.competition_sensitivity.rows:
+        report.competition_sensitivity = valuation.competition_sensitivity.to_dict()
     if valuation.comps:
         report.comps = valuation.comps.to_dict()
 
