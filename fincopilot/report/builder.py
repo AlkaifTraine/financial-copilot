@@ -22,6 +22,49 @@ from .models import KPI, ReportModel
 log = logging.getLogger(__name__)
 
 
+def _valuation_confidence(valuation: Valuation) -> tuple[str, list[str]]:
+    """Overall valuation confidence (High/Medium/Low) from measurable uncertainty.
+
+    Adds penalty points for a wide bull-bear dispersion, heavy terminal-value
+    dependence, and a large disagreement between the DCF and the comps cross-check —
+    the specific things that should make a precise fair value less trustworthy.
+    """
+    score = 0
+    drivers: list[str] = []
+
+    dispersion = valuation.scenarios.dispersion if valuation.scenarios else None
+    if dispersion is not None:
+        if dispersion > 1.5:
+            score += 2
+            drivers.append(f"very wide bull-bear range ({dispersion * 100:.0f}% of base)")
+        elif dispersion > 0.8:
+            score += 1
+            drivers.append(f"wide bull-bear range ({dispersion * 100:.0f}% of base)")
+
+    terminal = valuation.dcf.terminal_value_share if valuation.dcf else None
+    if terminal is not None:
+        if terminal > 0.80:
+            score += 2
+            drivers.append(f"{terminal * 100:.0f}% of value in the terminal period")
+        elif terminal > 0.65:
+            score += 1
+            drivers.append(f"{terminal * 100:.0f}% terminal-value dependence")
+
+    dcf = valuation.dcf.fair_value_per_share if valuation.dcf else None
+    comps = valuation.comps.implied_value_per_share if valuation.comps else None
+    if dcf and dcf > 0 and comps and comps > 0:
+        gap = abs(comps / dcf - 1)
+        if gap > 0.5:
+            score += 2
+            drivers.append(f"DCF and comps disagree by {gap * 100:.0f}%")
+        elif gap > 0.25:
+            score += 1
+            drivers.append(f"DCF-comps gap of {gap * 100:.0f}%")
+
+    level = "Low" if score >= 4 else "Medium" if score >= 2 else "High"
+    return level, drivers
+
+
 def _source_freshness(filed: str | None, as_of: str | None) -> str:
     """Classify a source by age relative to the report date.
 
@@ -236,6 +279,8 @@ def build_report(
         }
         for document in ingest.accepted
     ]
+
+    report.valuation_confidence, report.confidence_drivers = _valuation_confidence(valuation)
 
     if progress:
         progress("charts", "rendering charts")

@@ -655,6 +655,15 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             f"The cross-checks above are shown for triangulation; they are not averaged into the target.",
             styles["small"],
         ))
+        if report.valuation_confidence:
+            drivers = (
+                f" Lowered by: {'; '.join(report.confidence_drivers)}. Read the fair value as a "
+                f"central estimate within a wide range, not a precise number."
+                if report.confidence_drivers else ""
+            )
+            story.append(Paragraph(
+                f"<b>Valuation confidence: {report.valuation_confidence}.</b>{drivers}", styles["small"],
+            ))
 
     # -- what is priced in (reverse DCF) ----------------------------------
     if report.priced_in and report.priced_in.get("rows"):

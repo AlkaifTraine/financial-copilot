@@ -459,3 +459,26 @@ class TestSourceFreshness:
         assert _source_freshness("2023-01-01", "2026-08-20") == "Historical context"
         assert _source_freshness(None, "2026-08-20") == ""
         assert _source_freshness("bad", "2026-08-20") == ""
+
+
+class TestValuationConfidence:
+    def _val(self, dispersion=None, terminal=None, dcf=None, comps=None):
+        from types import SimpleNamespace as NS
+        return NS(
+            scenarios=NS(dispersion=dispersion) if dispersion is not None else None,
+            dcf=NS(terminal_value_share=terminal or 0.0,
+                   fair_value_per_share=dcf) if (terminal is not None or dcf is not None) else None,
+            comps=NS(implied_value_per_share=comps) if comps is not None else None,
+        )
+
+    def test_low_confidence_when_everything_wide(self):
+        from fincopilot.report.builder import _valuation_confidence
+        level, drivers = _valuation_confidence(
+            self._val(dispersion=1.8, terminal=0.9, dcf=79.0, comps=295.0))
+        assert level == "Low" and len(drivers) == 3
+
+    def test_high_confidence_when_tight(self):
+        from fincopilot.report.builder import _valuation_confidence
+        level, drivers = _valuation_confidence(
+            self._val(dispersion=0.5, terminal=0.5, dcf=100.0, comps=110.0))
+        assert level == "High" and drivers == []

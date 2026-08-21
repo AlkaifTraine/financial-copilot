@@ -125,6 +125,11 @@ class ReportModel:
     charts: dict[str, str] = field(default_factory=dict)     # name -> file path
     sources: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # Overall confidence in the valuation (High/Medium/Low) and the drivers behind it —
+    # so a wide scenario range or a big DCF-vs-comps gap lowers it visibly rather than
+    # hiding behind one precise fair value.
+    valuation_confidence: str = ""
+    confidence_drivers: list[str] = field(default_factory=list)
 
     # Canonical metric identities (report/metrics.py), used by the QA gate to
     # check that no section contradicts an authoritative figure.

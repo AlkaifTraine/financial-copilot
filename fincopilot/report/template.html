@@ -173,7 +173,7 @@
     </div>
     <div class="fc-rating {{ r.rating_tone }}">
       <div class="label">{{ r.rating }}</div>
-      <div class="sub">Intrinsic DCF</div>
+      <div class="sub">Intrinsic DCF{% if r.valuation_confidence %} · {{ r.valuation_confidence }} confidence{% endif %}</div>
     </div>
   </div>
 
@@ -485,6 +485,10 @@
     ({{ '%+.1f'|format(r.blended.upside * 100) }}% vs price){% endif %}.
     The cross-checks are shown above for triangulation; they are not averaged into the target.
   </p>
+  {% if r.valuation_confidence %}
+  <p style="font-size:12.5px;margin-top:6px;"><strong>Valuation confidence: {{ r.valuation_confidence }}.</strong>
+    {% if r.confidence_drivers %}<span style="color:var(--ink-2);">Lowered by: {{ r.confidence_drivers|join('; ') }}. Read the fair value as a central estimate within a wide range, not a precise number.</span>{% endif %}</p>
+  {% endif %}
   {% endif %}
 
   {# ---- what is priced in (reverse DCF) ---- #}
