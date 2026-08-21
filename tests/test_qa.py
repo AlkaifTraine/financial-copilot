@@ -507,3 +507,34 @@ class TestCompetitionSensitivity:
         from fincopilot.valuation.sensitivity import build_competition_sensitivity
         cs = build_competition_sensitivity(**self._kw(), base_fair_value=0.0)
         assert cs.rows == []
+
+
+class TestDisclosures:
+    def _val(self, overrides=None):
+        from types import SimpleNamespace as NS
+        def _get(k):
+            return {"wacc": NS(value=0.135), "terminal_growth": NS(value=0.025)}.get(k)
+        return NS(currency="USD", fair_value=148.86,
+                  assumptions=NS(get=_get), dcf=NS(terminal_value_share=0.82),
+                  analyst_overrides=overrides or [])
+
+    def _report(self):
+        r = ReportModel(company_name="NVIDIA", ticker="NVDA", currency="USD")
+        r.rating = "SELL"
+        r.risks = [{"risk": "Export controls"}, {"risk": "Competition"},
+                   {"risk": "Concentration"}, {"risk": "extra"}]
+        return r
+
+    def test_disclosures_apparatus(self):
+        from fincopilot.report.builder import _disclosures
+        d = _disclosures(self._report(), self._val())
+        assert d["price_target"] == "USD 148.86" and d["horizon"] == "12 months"
+        assert d["rating"] == "SELL" and len(d["rating_definitions"]) == 3
+        assert d["risks_to_target"] == ["Export controls", "Competition", "Concentration"]
+        assert "13.5% WACC" in d["methodology"] and "82%" in d["methodology"]
+        assert "certification" in d and "not been reviewed" in d["certification"].lower()
+
+    def test_analyst_adjusted_flag_in_methodology(self):
+        from fincopilot.report.builder import _disclosures
+        d = _disclosures(self._report(), self._val(overrides=["terminal_margin"]))
+        assert "ANALYST-ADJUSTED" in d["methodology"] and "terminal_margin" in d["methodology"]

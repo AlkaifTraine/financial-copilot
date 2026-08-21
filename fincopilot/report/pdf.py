@@ -946,6 +946,29 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
             bulletType="bullet", start="–", leftIndent=10, bulletFontSize=7,
         ))
 
+    # -- methodology, ratings & disclosures -------------------------------
+    d = report.disclosures
+    if d:
+        story.append(Paragraph("METHODOLOGY, RATINGS &amp; DISCLOSURES", styles["h2"]))
+        story.append(Paragraph(
+            f"<b>Rating: {d['rating']}</b> &middot; <b>12-month price target: {d['price_target']}</b> "
+            f"({d['horizon']} horizon).", styles["small"],
+        ))
+        story.append(Paragraph(d["methodology"], styles["small"]))
+        story.append(Paragraph("<b>Rating definitions.</b>", styles["small"]))
+        story.append(ListFlowable(
+            [ListItem(Paragraph(rd, styles["bullet"]), leftIndent=10) for rd in d["rating_definitions"]],
+            bulletType="bullet", start="–", leftIndent=10, bulletFontSize=7,
+        ))
+        if d.get("risks_to_target"):
+            story.append(Paragraph(
+                "<b>Key risks to the price target:</b> " + "; ".join(d["risks_to_target"]) + ".",
+                styles["small"],
+            ))
+        story.append(Paragraph(f"<b>Analyst certification.</b> {d['certification']}", styles["small"]))
+        story.append(Paragraph(f"<b>Data &amp; distribution.</b> {d['data_sources']}", styles["small"]))
+        story.append(Spacer(1, 6))
+
     # -- sources ----------------------------------------------------------
     if report.sources:
         story.append(Paragraph("SOURCE DOCUMENTS", styles["h2"]))

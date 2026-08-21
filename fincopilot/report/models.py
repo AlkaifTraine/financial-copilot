@@ -134,6 +134,9 @@ class ReportModel:
     # Value drivers a human analyst pinned (empty for a pure model run). When set,
     # the report is flagged analyst-adjusted.
     analyst_overrides: list[str] = field(default_factory=list)
+    # Institutional research apparatus: 12-month price target, rating definitions,
+    # valuation methodology, risks to the target, certification, data disclosures.
+    disclosures: dict = field(default_factory=dict)
 
     # Canonical metric identities (report/metrics.py), used by the QA gate to
     # check that no section contradicts an authoritative figure.
