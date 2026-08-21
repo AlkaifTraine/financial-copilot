@@ -303,10 +303,23 @@ def _scheduled_earnings_dates(ticker: str, as_of: str | None) -> list:
                     found.add(moment)
         except Exception:
             pass
-        return sorted(moment for moment in found if moment > reference)
+        return _collapse_adjacent_dates(sorted(m for m in found if m > reference))
     except Exception as exc:
         log.info("earnings calendar unavailable for %s: %s", ticker, exc)
         return []
+
+
+def _collapse_adjacent_dates(dates: list, within_days: int = 7) -> list:
+    """Merge dates within `within_days` of each other — one earnings event, not two.
+
+    yfinance's two feeds (earnings_dates and calendar) often report the SAME event a
+    day apart; left uncollapsed, two catalysts would anchor to what is really one date.
+    """
+    collapsed: list = []
+    for moment in dates:
+        if not collapsed or (moment - collapsed[-1]).days > within_days:
+            collapsed.append(moment)
+    return collapsed
 
 
 def anchor_earnings_catalysts(catalysts: list["Catalyst"], dates: list) -> int:

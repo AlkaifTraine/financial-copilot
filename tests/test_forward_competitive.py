@@ -235,3 +235,18 @@ class TestEarningsAnchoring:
         cats = [Catalyst(event="earnings", timing="sometime", direction="d", metric="m")]
         assert anchor_earnings_catalysts(cats, []) == 0
         assert cats[0].timing == "sometime"
+
+
+class TestEarningsDateCollapse:
+    def test_adjacent_dates_collapse_to_one(self):
+        from datetime import date
+        from fincopilot.report.monitoring import _collapse_adjacent_dates
+        # Aug 26 and Aug 27 are the same event reported a day apart by two feeds.
+        out = _collapse_adjacent_dates([date(2026, 8, 26), date(2026, 8, 27), date(2026, 11, 19)])
+        assert out == [date(2026, 8, 26), date(2026, 11, 19)]
+
+    def test_distinct_quarters_are_kept(self):
+        from datetime import date
+        from fincopilot.report.monitoring import _collapse_adjacent_dates
+        out = _collapse_adjacent_dates([date(2026, 8, 26), date(2026, 11, 19), date(2027, 2, 25)])
+        assert len(out) == 3
