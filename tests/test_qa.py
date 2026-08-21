@@ -22,6 +22,7 @@ from fincopilot.report.qa import (
     check_segment_reconciliation,
     check_annualization_arithmetic,
     check_market_implied_claims,
+    check_numeric_consistency,
     check_valuation_integrity,
     run_qa,
 )
@@ -590,3 +591,87 @@ class TestV8PublicationGate:
         first = list(report.warnings)
         run_qa(report)                            # re-run (as the correction loop does)
         assert report.warnings == first           # no duplicate QA lines
+
+
+class TestNumericConsistency:
+    """v8+: prose numbers for model drivers/scenarios must match the model — precise
+    enough not to false-positive on legitimate bridge prose."""
+
+    def _report(self, prose, terminal_margin=0.48, terminal_growth=0.025, scenarios=None):
+        report = ReportModel(company_name="NVDA", ticker="NVDA", currency="USD")
+        report.assumptions = [
+            {"key": "terminal_margin", "value": terminal_margin},
+            {"key": "terminal_growth", "value": terminal_growth},
+        ]
+        if scenarios:
+            report.scenarios = {"cases": scenarios}
+        report.sections = [Section(key="t", title="T", paragraphs=[prose], evidence=_evidence(2))]
+        return report
+
+    def test_wrong_terminal_margin_flagged(self):
+        r = self._report("We assume a terminal operating margin of 55% [1].", terminal_margin=0.48)
+        assert any("terminal operating margin" in i for i in check_numeric_consistency(r))
+
+    def test_correct_terminal_margin_not_flagged(self):
+        r = self._report("We assume a terminal operating margin of 48% [1].", terminal_margin=0.48)
+        assert check_numeric_consistency(r) == []
+
+    def test_bridge_prose_does_not_false_positive(self):
+        r = self._report("Operating margin of 60% today normalizes to a terminal operating "
+                         "margin of 48% at maturity [1].", terminal_margin=0.48)
+        assert check_numeric_consistency(r) == []
+
+    def test_wrong_scenario_value_flagged(self):
+        r = self._report("Our bull case of $300 assumes hyper-growth persists [1].",
+                         scenarios=[{"key": "bull", "fair_value_per_share": 250.0}])
+        assert any("bull case" in i for i in check_numeric_consistency(r))
+
+    def test_correct_scenario_value_not_flagged(self):
+        r = self._report("Our bull case of $250 assumes hyper-growth persists [1].",
+                         scenarios=[{"key": "bull", "fair_value_per_share": 250.5}])
+        assert check_numeric_consistency(r) == []
+
+    def test_numeric_mismatch_blocks(self):
+        r = self._report("We assume a terminal operating margin of 55% [1].", terminal_margin=0.48)
+        run_qa(r)
+        assert r.blocked is True and r.qa_status == "FAILED"
+
+
+class TestSectionAttribution:
+    def test_finding_attributed_to_the_offending_section(self):
+        from fincopilot.report.correction import section_level_findings
+        report = ReportModel(company_name="NVDA", ticker="NVDA", currency="USD")
+        report.canonical_metrics = [{"key": "revenue", "label": "Revenue", "value": 215.9e9,
+                                     "unit": "currency", "period": "FY2026", "definition": "x"}]
+        report.sections = [
+            Section(key="business", title="Business", paragraphs=["NVIDIA designs GPUs [1]."],
+                    evidence=_evidence(2)),
+            Section(key="outlook", title="Outlook",
+                    paragraphs=["The $78 billion Q1 FY2027 guidance annualized implies 14% "
+                                "growth over FY2026 [1]."], evidence=_evidence(2)),
+        ]
+        attributed = section_level_findings(report)
+        assert "outlook" in attributed and "business" not in attributed
+
+
+class TestNumericConsistencyImplied:
+    def _report(self, prose, model_tg=0.025, implied_tg=0.07):
+        report = ReportModel(company_name="NVDA", ticker="NVDA", currency="USD")
+        report.assumptions = [{"key": "terminal_growth", "value": model_tg}]
+        report.priced_in = {"rows": [{"key": "terminal_growth", "unit": "%",
+                                      "implied_value": implied_tg, "base_value": model_tg}]}
+        report.sections = [Section(key="t", title="T", paragraphs=[prose], evidence=_evidence(2))]
+        return report
+
+    def test_dcf_implied_value_is_accepted_not_flagged(self):
+        # The real false positive: prose cites the reverse-DCF implied 7%, not our 2.5%.
+        r = self._report("At today's price the DCF-implied terminal growth of 7% is required [1].")
+        assert check_numeric_consistency(r) == []
+
+    def test_model_value_is_accepted(self):
+        r = self._report("We assume a terminal growth of 2.5% [1].")
+        assert check_numeric_consistency(r) == []
+
+    def test_number_matching_neither_is_flagged(self):
+        r = self._report("The report uses a terminal growth of 12% [1].")   # neither 2.5 nor 7
+        assert any("terminal growth" in i for i in check_numeric_consistency(r))

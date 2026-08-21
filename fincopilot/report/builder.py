@@ -510,11 +510,33 @@ def build_report(
         regenerators.update(thesis=_regen_thesis, risks=_regen_risks, forward=_regen_forward)
 
     if include_narrative and index is not None:
+        from .correction import section_level_findings
+        from .sections import SPECS, build_section
+
         def _regen_sections(corr):
-            report.sections = section_builder.build_all(
-                index, company.name,
-                latest_fiscal_year=history.latest.fiscal_year if history.latest else None,
-                financial_facts=canonical_block(history, valuation), corrections=corr)
+            # Targeted: regenerate ONLY the section(s) whose own text triggers a check,
+            # each with feedback scoped to that section — not the whole report. Falls
+            # back to a full rebuild if attribution finds nothing specific.
+            per_section = section_level_findings(report)
+            facts = canonical_block(history, valuation)
+            fy = history.latest.fiscal_year if history.latest else None
+            if not per_section:
+                report.sections = section_builder.build_all(
+                    index, company.name, latest_fiscal_year=fy,
+                    financial_facts=facts, corrections=corr)
+                return
+            spec_by_key = {s.key: s for s in SPECS}
+            rebuilt = []
+            for section in report.sections:
+                messages = per_section.get(section.key)
+                if messages and section.key in spec_by_key:
+                    fresh = build_section(
+                        spec_by_key[section.key], index, company.name,
+                        latest_fiscal_year=fy, financial_facts=facts, corrections=messages)
+                    rebuilt.append(fresh if not fresh.is_empty else section)
+                else:
+                    rebuilt.append(section)      # clean section left untouched
+            report.sections = rebuilt
 
         regenerators["sections"] = _regen_sections
 

@@ -22,7 +22,7 @@ from .qa import BLOCKING_SEVERITIES, run_qa
 
 log = logging.getLogger(__name__)
 
-MAX_QA_RETRIES = 2
+MAX_QA_RETRIES = 3      # correction attempts before the report is left blocked
 
 # Which regenerable component owns each check's findings. Deterministic checks map to
 # None: a numeric/structural contradiction there is a data/calculation bug that
@@ -31,6 +31,7 @@ CHECK_TO_COMPONENT: dict[str, str | None] = {
     "annualization_arithmetic": "sections",
     "quarterly_annualization": "sections",
     "canonical_metric": "sections",
+    "numeric_consistency": "sections",
     "consensus_scenario": "sections",
     "segment_end_market": "sections",
     "citation": "sections",
@@ -56,6 +57,42 @@ def correction_instruction(corrections: list[str] | None) -> str:
         "\n(Where an issue names a wrong period, unit, annualization, management attribution, "
         "or an unsupported number, correct the underlying statement — do not merely reword it.)"
     )
+
+
+def section_level_findings(report) -> dict:
+    """Attribute section-facing QA findings to the specific section that triggers them.
+
+    Runs the section-prose checks against each section in isolation, so the correction
+    loop can regenerate ONLY the offending section (not the whole report) with feedback
+    scoped to that section. Returns {section_key: [messages]}.
+    """
+    from types import SimpleNamespace
+
+    from . import qa
+
+    section_checks = (
+        qa.check_annualization_arithmetic, qa.check_quarterly_annualization,
+        qa.check_metric_consistency, qa.check_consensus_scenario,
+        qa.check_segment_end_market, qa.check_market_implied_claims,
+        qa.check_numeric_consistency, qa.audit_citations,
+    )
+    found: dict[str, list[str]] = {}
+    for section in getattr(report, "sections", None) or []:
+        probe = SimpleNamespace(
+            sections=[section],
+            canonical_metrics=getattr(report, "canonical_metrics", None) or [],
+            priced_in=getattr(report, "priced_in", None) or {},
+            assumptions=getattr(report, "assumptions", None) or [],
+            scenarios=getattr(report, "scenarios", None) or {},
+            risks=[], forward={}, thesis={},
+        )
+        for check in section_checks:
+            try:
+                for message in check(probe):
+                    found.setdefault(section.key, []).append(message)
+            except Exception:                       # a check that can't run on a bare section
+                continue
+    return found
 
 
 def blocking_findings(report) -> list[dict]:

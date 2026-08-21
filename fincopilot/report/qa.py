@@ -532,6 +532,85 @@ def check_annualization_arithmetic(report) -> list[str]:
     return issues
 
 
+def check_numeric_consistency(report) -> list[str]:
+    """Prose numbers attributed to a model driver or scenario must match the model.
+
+    Extends the canonical-metric check to the forward DRIVERS (terminal margin, year-1
+    growth, terminal growth) and the SCENARIO fair values — model outputs a prose
+    passage can misquote. Deterministic and deliberately PRECISE: it only fires on a
+    tight attribution ("terminal operating margin of X%", "bull case of $X"), so it
+    does not flag a number that merely appears near the phrase (e.g. the current margin
+    in a bridge), keeping false positives low.
+    """
+    issues: list[str] = []
+
+    # -- forward drivers, from the assumption ledger ----------------------
+    # A prose figure for a driver is valid if it matches EITHER our model assumption OR
+    # the reverse-DCF implied value (prose legitimately cites both: "our terminal growth
+    # of 2.5%" and "the price implies 7%"). Only a number matching NEITHER is a mismatch.
+    priced = {row.get("key"): row for row in (report.priced_in or {}).get("rows", [])}
+
+    def _implied_pct(key):
+        row = priced.get(key)
+        value = row.get("implied_value") if row else None
+        return value * 100 if value is not None else None
+
+    driver_specs = {
+        # driver_key: (pattern, tolerance, label, priced_in key for the implied value)
+        "terminal_margin": (
+            r"terminal[- ]?(?:operating )?margin\s+(?:of|at|near|around|assumption of)\s+"
+            r"(?:about |approximately |~)?(\d{1,3}(?:\.\d+)?)\s*%"
+            r"|(\d{1,3}(?:\.\d+)?)\s*%\s+terminal[- ]?(?:operating )?margin",
+            1.5, "terminal operating margin", "operating_margin"),
+        "terminal_growth": (
+            r"terminal growth(?:\s+rate)?\s+(?:of|at)\s+(?:about |~)?(\d{1,3}(?:\.\d+)?)\s*%"
+            r"|(\d{1,3}(?:\.\d+)?)\s*%\s+terminal growth",
+            0.8, "terminal growth", "terminal_growth"),
+        "year_one_growth": (
+            r"year[- ]?(?:one|1)\s+(?:revenue\s+)?growth\s+(?:of|at)\s+(?:about |~)?(\d{1,3}(?:\.\d+)?)\s*%",
+            2.5, "year-1 revenue growth", None),
+    }
+    values = {a.get("key"): a.get("value") for a in (report.assumptions or [])
+              if isinstance(a, dict)}
+    text = _section_prose(report) + " " + _thesis_prose(report)
+    for key, (pattern, tol, label, implied_key) in driver_specs.items():
+        model_value = values.get(key)
+        if model_value is None:
+            continue
+        acceptable = [model_value * 100]
+        implied = _implied_pct(implied_key) if implied_key else None
+        if implied is not None:
+            acceptable.append(implied)
+        if key == "year_one_growth" and report.market_implied_growth is not None:
+            acceptable.append(report.market_implied_growth * 100)
+        for match in re.finditer(pattern, text, re.I):
+            claimed = float(next(g for g in match.groups() if g is not None))
+            if not any(abs(claimed - value) <= tol for value in acceptable):
+                refs = " / ".join(f"{v:.1f}%" for v in acceptable)
+                issues.append(
+                    f"The report states a {label} of {claimed:g}% but neither the model nor the "
+                    f"DCF-implied value ({refs}) supports it — a numeric mismatch."
+                )
+
+    # -- scenario fair values ---------------------------------------------
+    by_key = {c.get("key"): c.get("fair_value_per_share")
+              for c in (report.scenarios or {}).get("cases", [])}
+    for case in ("bear", "bull"):
+        model_value = by_key.get(case)
+        if not model_value:
+            continue
+        pattern = (rf"{case}[- ]case\s+(?:of|value of|fair value of|at)\s+"
+                   rf"(?:USD |US\$|\$|₹|€)?\s*([\d,]+(?:\.\d+)?)")
+        for match in re.finditer(pattern, text, re.I):
+            claimed = float(match.group(1).replace(",", ""))
+            if claimed > 0 and abs(claimed / model_value - 1) > 0.03:
+                issues.append(
+                    f"The report states a {case} case of {claimed:g} but the scenario model "
+                    f"has {model_value:.1f} — a numeric mismatch; prose must quote the model value."
+                )
+    return issues
+
+
 def check_valuation_integrity(report) -> list[str]:
     """Deterministic guard against valuation double-counting (item #1).
 
@@ -591,6 +670,7 @@ CHECK_SEVERITY = {
     "valuation_integrity": "CRITICAL",      # double-counting / base-case != DCF
     "segment_reconciliation": "CRITICAL",   # segments don't sum to consolidated revenue
     "annualization_arithmetic": "CRITICAL", # a quarter annualized to a wrong YoY number
+    "numeric_consistency": "CRITICAL",      # a prose driver/scenario number != the model
     "citation": "HIGH",                     # grounding failure on a claim-heavy section
     "risk_direction": "HIGH",               # a downside risk that improves its metric
     "quarterly_annualization": "HIGH",      # a quarter annualized as annual (fuzzy)
@@ -619,6 +699,7 @@ def run_qa(report) -> list[dict]:
         "valuation_integrity": check_valuation_integrity(report),
         "segment_reconciliation": check_segment_reconciliation(report),
         "annualization_arithmetic": check_annualization_arithmetic(report),
+        "numeric_consistency": check_numeric_consistency(report),
         "citation": audit_citations(report),
         "risk_direction": check_risk_direction(report),
         "quarterly_annualization": check_quarterly_annualization(report),

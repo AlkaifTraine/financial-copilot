@@ -227,7 +227,9 @@ def build_section(
         ) + correction_instruction(corrections),
         system=_SYSTEM,
         model=config.WRITER_MODEL,
-        temperature=config.TEMPERATURE_PROSE,
+        # A correction re-draft runs deterministically (temp 0) so the fix is stable and
+        # complies with the mandatory instruction rather than re-rolling the prose.
+        temperature=0.0 if corrections else config.TEMPERATURE_PROSE,
         max_tokens=1100,
     )
 
