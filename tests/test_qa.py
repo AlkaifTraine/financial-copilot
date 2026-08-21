@@ -7,6 +7,8 @@ and each specific defect must be caught.
 
 from __future__ import annotations
 
+import pytest
+
 from fincopilot.report.models import Evidence, ReportModel, Section
 from fincopilot.report.qa import (
     audit_citations,
@@ -426,3 +428,24 @@ class TestAnnualizationArithmetic:
         # A full-year figure (4x would be implausible) must not trip the check.
         report = self._report("$216 billion annualized is 30% growth over FY2025 [1].")
         assert check_annualization_arithmetic(report) == []
+
+
+class TestMarginBridge:
+    def test_parses_bridge_and_confidence(self):
+        from fincopilot.valuation.assumptions import _model_margin_bridge
+        proposal = {"terminal_operating_margin": {
+            "value": 0.48, "margin_confidence": "medium",
+            "margin_bridge": [
+                {"component": "Current operating margin", "value": 60.0},
+                {"component": "-Pricing normalization", "value": -8.0},
+                {"component": "-Competitive pressure", "value": -4.0},
+            ],
+        }}
+        bridge, confidence = _model_margin_bridge(proposal)
+        assert confidence == "Medium"
+        assert bridge[0] == {"component": "Current operating margin", "value": 60.0}
+        assert sum(s["value"] for s in bridge) == pytest.approx(48.0)
+
+    def test_missing_bridge_is_empty(self):
+        from fincopilot.valuation.assumptions import _model_margin_bridge
+        assert _model_margin_bridge({"terminal_operating_margin": {"value": 0.48}}) == ([], "")

@@ -174,6 +174,24 @@ def value_company(
                 base_a = probe_ledger.get(key)
                 if final_a is not None and base_a is not None and not final_a.provenance:
                     final_a.provenance = base_a.provenance
+            # The margin bridge is tied to the terminal margin; preserve it from the
+            # probe when the override dropped it.
+            margin = ledger.get("terminal_margin")
+            base_margin = probe_ledger.get("terminal_margin")
+            if margin is not None and base_margin is not None and not margin.bridge and base_margin.bridge:
+                margin.bridge = base_margin.bridge
+                margin.confidence = margin.confidence or base_margin.confidence
+
+    # A bridge must sum to the terminal margin actually used. When the agent moved the
+    # margin (or the model's arithmetic drifted), reconcile with a residual row so the
+    # walk always lands on the reported figure.
+    margin = ledger.get("terminal_margin")
+    if margin is not None and margin.bridge:
+        target_pp = margin.value * 100.0
+        walked = sum(row.get("value", 0.0) for row in margin.bridge)
+        if abs(walked - target_pp) > 0.5:
+            margin.bridge = [*margin.bridge,
+                             {"component": "Net other adjustments", "value": round(target_pp - walked, 1)}]
 
     # -- the model --------------------------------------------------------
     try:

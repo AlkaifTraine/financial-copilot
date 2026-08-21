@@ -650,6 +650,13 @@
       <br><span style="color:var(--ink-2);">→ Model output:</span> {{ a.display }}
     </div>
     {% endif %}
+    {% if a.bridge %}
+    <div class="why" style="margin-top:4px;">
+      <strong>Margin bridge{% if a.confidence %} (confidence: {{ a.confidence }}){% endif %}:</strong>
+      {% for step in a.bridge %}<br><span style="color:var(--ink-2);">{{ step.component }}:</span> {{ '%+.1f'|format(step.value) if not loop.first else '%.1f'|format(step.value) }}pp{% endfor %}
+      <br><span style="color:var(--ink-2);">= Terminal operating margin:</span> {{ a.display }}
+    </div>
+    {% endif %}
   </div>
   {% endfor %}
   {% endif %}

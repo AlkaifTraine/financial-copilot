@@ -821,6 +821,18 @@ def render_pdf(report: ReportModel, output_path: str | Path) -> Path:
                     f'<br/><font size="6.5">Provenance: {chain} '
                     f'<b>&#8594; {item["display"]}</b></font>'
                 )
+            bridge = item.get("bridge") or []
+            if bridge:
+                steps = " ".join(
+                    f'{step["component"]}: {step["value"]:+.1f}pp' if i else
+                    f'{step["component"]}: {step["value"]:.1f}pp'
+                    for i, step in enumerate(bridge)
+                )
+                conf = f' (confidence: {item["confidence"]})' if item.get("confidence") else ""
+                derivation += (
+                    f'<br/><font size="6.5">Margin bridge{conf}: {steps} '
+                    f'<b>&#8594; {item["display"]}</b></font>'
+                )
             rows.append([item["label"], item["display"], basis, derivation])
         widths = [CONTENT_WIDTH * w for w in (0.22, 0.11, 0.19, 0.48)]
         table = _table(rows, widths, styles)

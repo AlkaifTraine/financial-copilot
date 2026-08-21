@@ -143,9 +143,13 @@ For each, give a one-sentence rationale AND expose its PROVENANCE — the eviden
 - management: specific management commentary you are relying on
 Your value is the model output that follows from this chain.
 
+For terminal_operating_margin ONLY, ALSO provide:
+- margin_bridge: the quantitative walk from today's margin to your terminal figure, as an ordered list of {{"component": "...", "value": <number in PERCENTAGE POINTS>}}. The FIRST item is the starting level (the current or normalized operating margin, e.g. 60.0). Each later item is a SIGNED adjustment in percentage points — include only those supported by evidence, and size each: e.g. +scale economies, +software/ecosystem mix, then -competitive pressure, -pricing normalization, -R&D intensity, -mature-semiconductor economics. The starting level plus all adjustments MUST equal your terminal_operating_margin (as a %). This makes the terminal margin reproducible rather than a bare number.
+- margin_confidence: exactly one of High / Medium / Low — how well-supported the terminal margin is (Low when it rests mostly on judgement, High when history/peers/guidance align).
+
 Return JSON:
 {{"year_one_revenue_growth": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}},
-  "terminal_operating_margin": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}},
+  "terminal_operating_margin": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}, "margin_bridge": [{{"component": "Current operating margin", "value": 60.0}}, {{"component": "-Pricing normalization", "value": -8.0}}], "margin_confidence": "Medium"}},
   "terminal_growth_rate": {{"value": 0.0, "rationale": "...", "provenance": {{"historical": "...", "guidance": "...", "industry": "...", "competitive": "...", "management": "..."}}}}}}"""
 
 
@@ -250,6 +254,27 @@ def _model_provenance(proposal: dict, key: str) -> dict:
         if value and value.lower() not in ("n/a", "none", "-"):
             chain[field_name] = value
     return chain
+
+
+def _model_margin_bridge(proposal: dict) -> tuple[list, str]:
+    """The terminal-margin bridge (start level + signed pp adjustments) and confidence."""
+    entry = proposal.get("terminal_operating_margin")
+    if not isinstance(entry, dict):
+        return [], ""
+    rows = entry.get("margin_bridge")
+    bridge: list = []
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, dict) and row.get("component") is not None:
+                try:
+                    bridge.append({"component": str(row["component"]).strip(),
+                                   "value": float(row.get("value"))})
+                except (TypeError, ValueError):
+                    continue
+    confidence = str(entry.get("margin_confidence") or "").strip().title()
+    if confidence not in ("High", "Medium", "Low"):
+        confidence = ""
+    return bridge, confidence
 
 
 def derive_inputs(
@@ -455,6 +480,7 @@ def derive_inputs(
         )
         raw_margin = proposed_margin if margin_clamped else None
 
+    margin_bridge, margin_confidence = _model_margin_bridge(proposal)
     ledger.add(
         Assumption(
             key="terminal_margin",
@@ -468,6 +494,8 @@ def derive_inputs(
             clamped=margin_clamped,
             raw_value=raw_margin,
             provenance=_model_provenance(proposal, "terminal_operating_margin"),
+            bridge=margin_bridge,
+            confidence=margin_confidence,
         )
     )
 

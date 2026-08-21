@@ -48,6 +48,11 @@ class Assumption:
     # Evidence chain for a model estimate: historical -> guidance -> industry ->
     # competitive -> management -> model output. Empty for mechanical assumptions.
     provenance: dict = field(default_factory=dict)
+    # Quantitative walk from a starting level to this value, as ordered
+    # {component, value} rows (first = start level, rest = signed pp adjustments).
+    # Used for the terminal-margin bridge; empty for other assumptions.
+    bridge: list = field(default_factory=list)
+    confidence: str = ""            # High / Medium / Low, where the model reports it
 
     def format(self, value: float | None) -> str:
         """Render a value in this assumption's own unit.
