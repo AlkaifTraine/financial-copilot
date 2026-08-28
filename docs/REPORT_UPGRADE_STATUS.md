@@ -3,7 +3,7 @@
 This tracks the "AI summary → institutional-quality equity research" upgrade.
 Read this first in a new session; do **not** re-explore or rebuild the platform.
 
-**Current as of 2026-08-28.** 340 tests pass; `main` was clean at `89a1e5d` before
+**Current as of 2026-08-28.** 368 tests pass; `main` was clean at `89a1e5d` before
 the audited-provenance work below. If you change code, update this file in the same commit —
 a stale handoff here is what makes a fresh session hallucinate the project's state.
 
@@ -32,7 +32,7 @@ checked in a browser; the site itself opens fine off-network (e.g. mobile data).
   thesis argues against — never folded into our own rating. (User decision.)
 - **Auto-deploy is live.** Push to `main` → GitHub Actions runs `pytest tests/`
   → deploys to fincopilot.duckdns.org. **Never push broken code.** Before any
-  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (340 tests), and a
+  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (368 tests), and a
   report must render (see Verify below).
 - **A blocking QA finding withholds the report.** Do not "fix" a blocked report by
   demoting its check to advisory — that was the v7 failure the v8 gate exists to
@@ -494,6 +494,37 @@ Index: 5,483 chunks from 10 documents, FY2023-FY2026.
 
 Router smoke-tested live: real calls served, cost metered ($0.000006/call on the
 fast tier), fallback counter reads 0 when the primary serves.
+
+## Access control + analytics (2026-08-28)
+
+`fincopilot/access.py` — two entry modes. `own_key`: visitor pastes an OpenAI
+key, billed to them, **not** rate limited here and **not** routed (the router's
+fallback is the OWNER's Gemini key; failing a guest over to it would spend the
+owner's money). `access_code`: shared secret, runs on owner credits, every limit
+applies. `Grant.uses_owner_credits` is the single predicate everything keys off.
+
+**`ACCESS_CODE` has no default and must never be committed** — the repo is
+public and the code authorises spending. A test asserts the literal is absent
+from source. Unset -> the code route does not exist (fails closed).
+Set on the instance only: `REQUIRE_ACCESS=1` and `ACCESS_CODE=<the code>`.
+The live value is deliberately NOT written down here — this file is public.
+
+Visitor keys are held in `llm._credentials`, a **threading.local** — Streamlit
+runs each session in its own thread, so a module global would leak one
+visitor's key into another's concurrent request. Verified isolated under
+concurrent threads.
+
+`fincopilot/analytics.py` — SQLite at `data/usage.db`. Events: session_start,
+company_load, question, report, error. **A question with zero citations is
+recorded as a failure** (retrieval missed, or the filings genuinely lack it) —
+that view is the point of the whole module. Never stores credentials (no column
+exists for one); question text is scrubbed via `guardrails.scan_outbound` and
+can be dropped entirely with `ANALYTICS_STORE_QUESTION_TEXT=0`. All writes are
+wrapped: analytics must never become the failure they were meant to observe.
+Owner dashboard is in the sidebar, gated on `uses_owner_credits`.
+
+Smoke-tested in the browser: gate blocks, wrong code rejected and logged as a
+failure, the correct code admits, usage panel appears, no exceptions.
 
 ## Key files
 

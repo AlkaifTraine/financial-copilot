@@ -142,6 +142,49 @@ ROUTER_STRATEGY = get_secret("ROUTER_STRATEGY", "simple-shuffle") or "simple-shu
 # bug, so the limit is on money rather than only on call count.
 MAX_USD_PER_PROCESS = float(get_secret("MAX_USD_PER_PROCESS", "25") or 25)
 
+# ---------------------------------------------------------------------------
+# Access control
+# ---------------------------------------------------------------------------
+# Two ways in, because the two have completely different cost exposure:
+#
+#   own key      the visitor pastes their own OpenAI key. They pay, so they are
+#                not metered against the owner's budget or rate limits.
+#   access code  a shared secret the owner hands out. These visitors spend the
+#                OWNER'S credits, so every limit applies to them.
+#
+# The code is read from the environment and has NO default. It must never be
+# committed: this repository is public, so a literal code in source is
+# harvestable by anyone reading GitHub, and it authorises spending on the
+# owner's account. Unset, the access-code route is simply unavailable and the
+# app is bring-your-own-key only — which is the safe way to fail.
+ACCESS_CODE = get_secret("ACCESS_CODE", "") or ""
+
+# Off by default so local development and the tests are never gated.
+REQUIRE_ACCESS = (get_secret("REQUIRE_ACCESS", "0") or "0") not in (
+    "0", "", "false", "False",
+)
+
+
+# ---------------------------------------------------------------------------
+# Usage analytics
+# ---------------------------------------------------------------------------
+# Which companies get loaded, what gets asked, what fails, and what it costs.
+# Without this there is no way to answer "is anyone using this, and what breaks
+# for them" other than guessing.
+ANALYTICS_ENABLED = (get_secret("ANALYTICS_ENABLED", "1") or "1") not in (
+    "0", "", "false", "False",
+)
+ANALYTICS_DB_PATH = get_secret("ANALYTICS_DB_PATH") or str(DATA_DIR / "usage.db")
+
+# Whether to keep the text of questions. On, the log shows what people actually
+# asked, which is where the product lessons are; off, only the length and the
+# classifier's category are kept. Question text is scrubbed of secrets and PII
+# before storage either way, and API keys are never stored under any setting.
+ANALYTICS_STORE_QUESTION_TEXT = (
+    get_secret("ANALYTICS_STORE_QUESTION_TEXT", "1") or "1"
+) not in ("0", "", "false", "False")
+
+
 # Every chat question is first classified by FAST_MODEL to judge what it is for
 # (see guardrails.classify_query). Set to "0" to disable — the deterministic
 # scans and the grounding requirement still apply.

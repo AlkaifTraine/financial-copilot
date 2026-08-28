@@ -170,6 +170,23 @@ The threat model is specific, and it is not "the user might ask something rude".
 
 The layers are deliberately different in kind. The classifier generalises across phrasing, which a pattern list cannot; the deterministic scans handle secrets and PII, where the target has an exact shape, no judgment is needed, and a model would only add latency and a second thing that can be talked out of its job. They fail differently, which is the point of having both.
 
+### Who gets in, and whose credits they spend
+
+A public URL in front of a paid API is an open tab on someone's card. There are two doors, because the cost exposure is completely different:
+
+- **Bring your own key.** The visitor pastes an OpenAI key. They are billed directly, so they are *not* metered against the owner's budget or rate limits — and their traffic never touches the router, because the router's fallback deployments are the owner's Gemini account and failing over would spend the owner's money.
+- **Access code.** A shared secret the owner hands out. These sessions run on the owner's credits, so every rate limit and the spend ceiling apply in full.
+
+The code is read from the environment and **has no default**. This repository is public: a literal code in source is readable by anyone and authorises spending real money, so unset, the code route simply does not exist and the app is bring-your-own-key only. Failing closed on a missing secret is the only safe direction, and a test asserts no code is ever baked into the source.
+
+Visitor keys live in Streamlit session state and nowhere else — never written to disk, never logged, never in the analytics database. They are held per *thread*, because Streamlit runs each session's script in its own thread and a module-level global would leak one visitor's key into another's concurrent request. The guardrails independently strip key-shaped strings from anything outbound, so a key pasted into the wrong box does not travel either.
+
+### Knowing whether anyone actually uses it
+
+`fincopilot/analytics.py` records every company load, question, and report to SQLite: whether it succeeded, how long it took, what it cost. The interesting questions are mostly about failure — which companies come back with no audited XBRL, which questions retrieve nothing, where people give up — so a question that returns **no citations is recorded as a failure**, and the sidebar surfaces recent ones directly.
+
+Two things are never stored: credentials (there is no column a key could occupy) and unscrubbed text (questions pass through the same PII/secret scrubbing as outbound prompts, and can be reduced to a length and a category with one setting). Session ids are random and identify no one, and visitors are told what is recorded before they enter.
+
 ### Cost: generate once per filing
 
 A report costs about $0.15 and a couple of minutes. Its inputs change a handful of times a year. So a finished report is stored in SQLite ([`fincopilot/report/store.py`](fincopilot/report/store.py)) and reused until the company actually publishes something new.
@@ -225,7 +242,7 @@ streamlit run app.py
 `SEC_USER_AGENT` must contain a real contact email — the SEC rejects requests without one. Without it the app still runs, falling back to web search and skipping audited XBRL financials.
 
 ```bash
-pytest tests/ -q                        # 340 unit tests (offline, no key needed)
+pytest tests/ -q                        # 368 unit tests (offline, no key needed)
 python -m fincopilot.eval.run NVIDIA    # retrieval ablation
 python scripts/robustness_check.py      # valuation invariants across 8 company profiles
 ```

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from fincopilot import config, ui
+from fincopilot import access, analytics, config, llm, ui
 from fincopilot.ratelimit import RateLimitExceeded, enforce
 from fincopilot.chat import ask
 from fincopilot.fundamentals import load_financials
@@ -60,10 +60,137 @@ _DEFAULTS = {
     "messages": [],
     "load_error": None,
     "financials_unavailable": None,
+    "grant": None,                  # how this visitor got in, and whose key they use
+    "session_id": None,             # opaque, for correlating this visitor's events
 }
 
 for key, default in _DEFAULTS.items():
     st.session_state.setdefault(key, default)
+
+if st.session_state["session_id"] is None:
+    st.session_state["session_id"] = access.new_session_id()
+    analytics.record(
+        analytics.SESSION_START, session_id=st.session_state["session_id"]
+    )
+
+
+def _grant() -> access.Grant | None:
+    return st.session_state["grant"]
+
+
+def _access_mode() -> str | None:
+    grant = _grant()
+    return grant.mode if grant else None
+
+
+def _track(event: str, **fields) -> None:
+    """Record an event against this session, with its access mode attached."""
+    analytics.record(
+        event,
+        session_id=st.session_state["session_id"],
+        access_mode=_access_mode(),
+        **fields,
+    )
+
+
+def _meter(action: str) -> None:
+    """Apply a rate limit only when this session spends the owner's credits.
+
+    A visitor on their own key is billed by their own provider and bounded by
+    their own account limits; charging them against the owner's allowance would
+    throttle them for spending nothing.
+    """
+    grant = _grant()
+    if grant is None or grant.uses_owner_credits:
+        enforce(action)
+
+
+def _gate() -> bool:
+    """Ask for a key or an access code. Returns True when the visitor may proceed.
+
+    Two doors, because the cost exposure differs: a visitor's own key bills
+    them, so they are unmetered here; an access code spends the owner's credits,
+    so every rate limit applies. The code route only exists if the owner has
+    configured one — this repository is public, so there is no default code.
+    """
+    if _grant() is not None:
+        return True
+
+    ui.hero(
+        title="Read the filings. Value the company. Cite every number.",
+        subtitle=(
+            "This tool calls a paid model API. Use your own OpenAI key, or an "
+            "access code if you were given one."
+        ),
+    )
+
+    own_key_tab, code_tab = st.tabs(["Use my own API key", "I have an access code"])
+
+    with own_key_tab:
+        st.caption(
+            "Your key stays in this browser session only — it is never written "
+            "to disk, never logged, and never stored with your activity. It is "
+            "used solely to call OpenAI on your behalf, and you are billed by "
+            "OpenAI directly. Get one at platform.openai.com/api-keys."
+        )
+        supplied = st.text_input(
+            "OpenAI API key", type="password", placeholder="sk-...",
+            key="byo_key_input",
+        )
+        if st.button("Continue", key="byo_go", type="primary"):
+            grant = access.grant_from_key(supplied)
+            if grant is None:
+                st.error("That does not look like an OpenAI key. They begin `sk-`.")
+                _track(analytics.ERROR, ok=False, detail={"stage": "auth_key"})
+            else:
+                st.session_state["grant"] = grant
+                _track(analytics.SESSION_START, detail={"granted": "own_key"})
+                st.rerun()
+
+    with code_tab:
+        if not access.access_code_configured():
+            st.info(
+                "No access code is configured on this deployment. Use your own "
+                "API key on the other tab."
+            )
+        else:
+            st.caption(
+                "Runs on the owner's API credits, so usage is rate limited. "
+                "Your activity is logged (see the note below)."
+            )
+            code = st.text_input(
+                "Access code", type="password", key="code_input"
+            )
+            if st.button("Continue", key="code_go", type="primary"):
+                grant = access.grant_from_code(code)
+                if grant is None:
+                    st.error("That code is not valid.")
+                    _track(analytics.ERROR, ok=False, detail={"stage": "auth_code"})
+                else:
+                    st.session_state["grant"] = grant
+                    _track(analytics.SESSION_START, detail={"granted": "access_code"})
+                    st.rerun()
+
+    st.divider()
+    st.caption(
+        "**What is recorded.** Which companies are loaded, the questions asked, "
+        "whether each step succeeded, and what it cost — so the tool can be "
+        "improved and its costs understood. API keys are never stored. "
+        "Sessions are identified by a random id that identifies no one."
+    )
+    return False
+
+
+if config.REQUIRE_ACCESS and not _gate():
+    st.stop()
+
+# Bind this visitor's own key, if they brought one, for the rest of this run.
+# Cleared first so a session that switched modes cannot inherit a stale key
+# from a previous script run on this thread.
+llm.clear_credentials()
+_active_grant = _grant()
+if _active_grant is not None and _active_grant.api_key:
+    llm.use_credentials(_active_grant.api_key)
 
 
 def _render_reliability(report) -> None:
@@ -130,7 +257,7 @@ def reset_company_state() -> None:
 def load_company(query: str, *, refresh: bool = False) -> None:
     """Run the full pipeline for ``query``, reporting progress as it goes."""
     try:
-        enforce("load")
+        _meter("load")
     except RateLimitExceeded as limit:
         st.session_state["load_error"] = str(limit)
         return
@@ -162,6 +289,11 @@ def load_company(query: str, *, refresh: bool = False) -> None:
                 st.session_state["load_error"] = (
                     "No usable documents could be indexed for this company."
                     + ("\n\n" + "\n\n".join(ingest.notes) if ingest.notes else "")
+                )
+                _track(
+                    analytics.COMPANY_LOAD,
+                    ticker=company.ticker, company=company.name, ok=False,
+                    detail={"reason": "no_documents_indexed", "notes": ingest.notes[:3]},
                 )
                 status.update(label="Could not load company", state="error")
                 return
@@ -197,6 +329,23 @@ def load_company(query: str, *, refresh: bool = False) -> None:
                     company, history, qualitative_context=context,
                     overrides=load_overrides(company.slug),
                 )
+
+            _track(
+                analytics.COMPANY_LOAD,
+                ticker=company.ticker,
+                company=company.name,
+                ok=True,
+                detail={
+                    "passages": len(index.chunks),
+                    "documents": len(ingest.accepted),
+                    "sources": ingest.sources_used,
+                    # The two questions worth answering from the log: how often
+                    # does a company arrive with no audited numbers, and how
+                    # often is there audited data that still cannot support a DCF.
+                    "financials_source": history.source if history else None,
+                    "valuation_built": st.session_state["valuation"] is not None,
+                },
+            )
 
             status.update(
                 label=f"{company.name} ready · {len(index.chunks):,} passages indexed",
@@ -294,6 +443,44 @@ with st.sidebar:
                if has_fallback
                else "no fallback configured (set GEMINI_API_KEY)")
         )
+
+        grant = _grant()
+        if grant is not None:
+            st.caption(
+                "**Access** · "
+                + ("your own API key — you are billed directly, and not rate limited here"
+                   if grant.mode == access.MODE_OWN_KEY
+                   else "access code — running on the owner's credits, rate limited")
+            )
+
+    # Usage, for whoever operates this. Behind the access code because it
+    # aggregates other visitors' activity; a guest on their own key sees only
+    # their own session's spend, above.
+    if _grant() is not None and _grant().uses_owner_credits:
+        with st.expander("Usage (last 30 days)"):
+            stats = analytics.summary(days=30)
+            row = st.columns(3)
+            row[0].metric("Sessions", stats["sessions"])
+            row[1].metric("Companies", stats["companies_loaded"])
+            row[2].metric("Questions", stats["questions"])
+            row2 = st.columns(3)
+            row2[0].metric("Reports", stats["reports"])
+            row2[1].metric("Failures", stats["failures"])
+            row2[2].metric("Spend", f"${stats['cost_usd']:.2f}")
+
+            if stats["top_companies"]:
+                st.caption("**Most loaded** · " + ", ".join(
+                    f"{t} ({n})" for t, n in stats["top_companies"][:6]
+                ))
+
+            recent_failures = analytics.failures(limit=8)
+            if recent_failures:
+                st.caption("**Recent failures** — where the tool let someone down:")
+                for f in recent_failures:
+                    st.caption(
+                        f"· `{f['event']}` {f['ticker'] or ''} — "
+                        f"{(f['detail'] or '')[:90]}"
+                    )
 
     if not config.is_sec_configured():
         st.divider()
@@ -525,12 +712,16 @@ with chat_tab:
 
     if messages and messages[-1]["role"] == "user":
         try:
-            enforce("chat")
+            _meter("chat")
         except RateLimitExceeded as limit:
             messages.append({"role": "assistant", "content": str(limit), "citations": []})
             st.rerun()
 
         with st.spinner("Searching the filings..."):
+            import time as _time
+
+            _started = _time.perf_counter()
+            _before = llm.get_usage().get("cost_usd", 0.0)
             answer = ask(
                 messages[-1]["content"],
                 index,
@@ -538,6 +729,19 @@ with chat_tab:
                 # The audited figures behind the valuation, so a fundamentals
                 # question is answered from the same numbers the DCF uses.
                 financials=st.session_state["history"],
+            )
+            analytics.record_question(
+                messages[-1]["content"],
+                session_id=st.session_state["session_id"],
+                access_mode=_access_mode(),
+                ticker=company.ticker if company else None,
+                # A question that came back with no citations is the signal
+                # worth having: either retrieval missed, or the filings really
+                # do not answer it. Either way it is a product lesson.
+                ok=bool(answer.citations),
+                duration_ms=int((_time.perf_counter() - _started) * 1000),
+                cost_usd=llm.get_usage().get("cost_usd", 0.0) - _before,
+                citations=len(answer.citations),
             )
 
         messages.append(
@@ -816,12 +1020,17 @@ with report_tab:
                 # Nothing was generated, so nothing was spent and no rate-limit
                 # allowance is consumed: this is the same document, re-rendered.
                 st.session_state["report"] = cached
+                _track(
+                    analytics.REPORT, ticker=company.ticker, company=company.name,
+                    ok=True, cost_usd=0.0,
+                    detail={"served_from": "store", "blocked": False},
+                )
                 st.success(
                     "Served the stored report for this filing set — no model "
                     "calls were made. Tick *Force regeneration* to rewrite it."
                 )
             else:
-                enforce("report")
+                _meter("report")
                 with st.status("Writing report...", expanded=True) as status:
                     def progress(stage: str, detail: str) -> None:
                         status.write(f"`{stage}` {detail}")
@@ -836,6 +1045,21 @@ with report_tab:
 
                     st.session_state["report"] = report
                     report_store.put(key, report, cost_usd=spent)
+                    _track(
+                        analytics.REPORT, ticker=company.ticker,
+                        company=company.name,
+                        # A blocked report is a failure worth counting: the QA
+                        # gate withheld it, and how often that happens is the
+                        # single best measure of output quality over time.
+                        ok=not getattr(report, "blocked", False),
+                        cost_usd=spent,
+                        detail={
+                            "served_from": "generated",
+                            "blocked": bool(getattr(report, "blocked", False)),
+                            "qa_status": getattr(report, "qa_status", None),
+                            "reliability": (getattr(report, "reliability", {}) or {}).get("score"),
+                        },
+                    )
                     status.update(
                         label=f"Report ready (${spent:.3f})",
                         state="complete",

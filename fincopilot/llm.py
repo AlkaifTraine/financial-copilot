@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import Any
 
 from . import config, guardrails
@@ -45,6 +46,26 @@ log = logging.getLogger(__name__)
 
 _router = None
 _router_failed = False
+
+# A visitor may bring their own API key. It is held per *thread* because
+# Streamlit runs each session's script in its own thread — a module-level
+# global would leak one visitor's key into another's concurrent request, which
+# would be both a billing bug and a security one. Nothing here is ever
+# persisted or logged.
+_credentials = threading.local()
+
+
+def use_credentials(api_key: str | None) -> None:
+    """Bind an API key to the current thread for the rest of this script run."""
+    _credentials.api_key = (api_key or "").strip() or None
+
+
+def active_key() -> str | None:
+    return getattr(_credentials, "api_key", None)
+
+
+def clear_credentials() -> None:
+    _credentials.api_key = None
 
 # Per-process usage, so a report's cost is observable rather than inferred.
 _usage: dict[str, float] = {
@@ -201,7 +222,7 @@ def _group_for(model: str | None) -> str:
     }.get(name, name)
 
 
-def _record(response, group: str) -> None:
+def _record(response, group: str, *, owner_pays: bool = True) -> None:
     usage = getattr(response, "usage", None)
     _usage["calls"] += 1
     if usage is not None:
@@ -218,7 +239,11 @@ def _record(response, group: str) -> None:
         cost = 0.0
 
     _usage["cost_usd"] += cost
-    guardrails.record_spend(cost)
+    # Only the owner's spend counts against the owner's ceiling. Metering a
+    # guest's own-key usage against it would let a few guests lock the owner
+    # out of their own deployment without costing the owner anything.
+    if owner_pays:
+        guardrails.record_spend(cost)
 
     # Did the primary serve this, or did we cross to the fallback provider?
     # Compared against the configured primary *model* rather than the group
@@ -276,20 +301,42 @@ def complete(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    active = router()
-    if active is None:
-        return None
+    # A visitor using their own key is served directly rather than through the
+    # router, deliberately. The router's fallback deployments are the OWNER's
+    # Gemini account, so routing a guest's traffic through it would spend the
+    # owner's money the moment their own provider hiccuped. Their key, their
+    # provider, their limits.
+    guest_key = active_key()
 
-    # A hard stop, not a warning: past the ceiling the next call is refused.
-    guardrails.enforce_budget()
+    if guest_key:
+        try:
+            import litellm
 
-    try:
-        response = active.completion(**kwargs)
-    except Exception as exc:
-        log.error("LLM call failed after routing and fallback: %s", exc)
-        return None
+            kwargs["model"] = f"openai/{_PRIMARY_MODEL.get(group, config.FAST_MODEL)}"
+            response = litellm.completion(
+                api_key=guest_key,
+                timeout=config.ROUTER_TIMEOUT_SECONDS,
+                num_retries=config.ROUTER_NUM_RETRIES,
+                **kwargs,
+            )
+        except Exception as exc:
+            log.error("LLM call failed on a visitor-supplied key: %s", exc)
+            return None
+    else:
+        active = router()
+        if active is None:
+            return None
 
-    _record(response, group)
+        # A hard stop, not a warning: past the ceiling the next call is refused.
+        guardrails.enforce_budget()
+
+        try:
+            response = active.completion(**kwargs)
+        except Exception as exc:
+            log.error("LLM call failed after routing and fallback: %s", exc)
+            return None
+
+    _record(response, group, owner_pays=not guest_key)
 
     try:
         content = response.choices[0].message.content
