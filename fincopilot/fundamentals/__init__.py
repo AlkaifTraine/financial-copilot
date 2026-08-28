@@ -6,10 +6,14 @@ import logging
 
 from ..resolve import Company
 from .models import FinancialHistory, FiscalYear
+from .recency import Recency, assess as assess_recency
 
 log = logging.getLogger(__name__)
 
-__all__ = ["FinancialHistory", "FiscalYear", "load_financials"]
+__all__ = [
+    "FinancialHistory", "FiscalYear", "Recency",
+    "load_financials", "assess_recency",
+]
 
 
 def load_financials(company: Company, *, max_years: int = 6) -> FinancialHistory | None:
@@ -45,6 +49,15 @@ def load_financials(company: Company, *, max_years: int = 6) -> FinancialHistory
             company.ticker,
         )
         return None
+
+    # Recency is attached here, at the single point where a history is built,
+    # so no caller can obtain one without also being told how old it is. The
+    # failure this prevents: a report dated today leading with FY2024 figures
+    # because the XBRL endpoint's retention window ended there, while the
+    # annual reports in the same index ran two years further.
+    history.recency = assess_recency(history)
+    if not history.recency.is_current:
+        history.notes.append(history.recency.summary)
 
     market.attach_market_data(history, company)
     return history

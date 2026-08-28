@@ -3,7 +3,7 @@
 This tracks the "AI summary → institutional-quality equity research" upgrade.
 Read this first in a new session; do **not** re-explore or rebuild the platform.
 
-**Current as of 2026-08-28.** 368 tests pass; `main` was clean at `89a1e5d` before
+**Current as of 2026-08-28.** 407 tests pass; `main` was clean at `89a1e5d` before
 the audited-provenance work below. If you change code, update this file in the same commit —
 a stale handoff here is what makes a fresh session hallucinate the project's state.
 
@@ -32,7 +32,7 @@ checked in a browser; the site itself opens fine off-network (e.g. mobile data).
   thesis argues against — never folded into our own rating. (User decision.)
 - **Auto-deploy is live.** Push to `main` → GitHub Actions runs `pytest tests/`
   → deploys to fincopilot.duckdns.org. **Never push broken code.** Before any
-  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (368 tests), and a
+  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (407 tests), and a
   report must render (see Verify below).
 - **A blocking QA finding withholds the report.** Do not "fix" a blocked report by
   demoting its check to advisory — that was the v7 failure the v8 gate exists to
@@ -525,6 +525,61 @@ Owner dashboard is in the sidebar, gated on `uses_owner_credits`.
 
 Smoke-tested in the browser: gate blocks, wrong code rejected and logged as a
 failure, the correct code admits, usage panel appears, no exceptions.
+
+## Recency + plausibility gates (2026-08-28)
+
+Both added after benchmarking a generated Bikaji report against the IIT KGP
+FEC club's report on the same company. The generated one valued Bikaji at
+**INR 77.37 against a market price of INR 618.80** and printed that the market
+must expect a **93.8% mature operating margin**. The FEC report reached INR
+440.80 (-26.6%) — a defensible bearish call. Ours was 82% below theirs.
+
+### Gate 1 — data recency (`fundamentals/recency.py`)
+
+Root cause of the bad report: `load_financials` served FY2023-FY2024 because
+**the NSE results-XBRL endpoint retains only ~3 years**, while the annual
+reports in the same index ran to FY2026 (revenue 29% higher). Provenance was
+intact; recency was silently lost. Verified this is NSE's design, not a network
+issue — the same query from the EC2 box returns the same window.
+
+`assess(history)` dates the newest `period_end` (NOT the fiscal-year label — an
+Indian FY2026 ends in March, a US one may end in December) against today:
+current <=15mo, aging <=21mo, stale <=33mo, unusable beyond. **stale/unusable
+sets `blocks_valuation`, and `FinancialHistory.is_sufficient_for_dcf` returns
+False** — so every existing caller is gated without touching a call site.
+Attached in `load_financials` so no caller can get a history without its age.
+Bikaji today: FY2024, 29 months, stale, blocked.
+
+**Consequence to accept:** Bikaji currently cannot be valued at all. That is
+correct — but it means coverage for Indian issuers is bounded by NSE's 3-year
+window. BSE has FY2025/FY2026 (`api.bseindia.com/BseIndiaAPI/api/FinancialResult/w?scripcode=<code>`,
+Bikaji = 543653) but its results attachments are **PDFs, not XBRL** — verified
+by downloading and listing the archive from the EC2 box (BSE's file host is
+blocked on the IIT KGP network; the API host is not). So closing this needs
+either a PDF-extraction path (explicitly rejected earlier, 2026-08-28) or
+another structured source.
+
+### Gate 2 — economic plausibility (`valuation/plausibility.py`)
+
+`check_valuation_integrity` asks whether a valuation is internally *consistent*;
+this asks whether it is *possible*. The Bikaji report passed the first and
+failed the second — consistent arithmetic on a mis-specified model.
+
+Thresholds are **company-relative, never absolute**: an implied margin above
+`2.5x the best margin this company has ever reported` (floor 45%) is CRITICAL,
+because "above 40%" needs re-tuning per sector while a multiple of demonstrated
+best does not. Also CRITICAL: `|FV/price - 1| > 60%`. MEDIUM: implied terminal
+growth above country nominal GDP, and gaps 45-60%.
+
+Every finding carries `likely_causes` computed from the actual inputs — stale
+base year, WACC >13%, margins held flat across the whole forecast, capex >1.4x
+D&A treated as maintenance. On Bikaji it names all four.
+
+Wired as `valuation_plausibility` (CRITICAL) + `valuation_plausibility_soft`
+(MEDIUM) in `CHECK_SEVERITY`, computed in `builder` where valuation and history
+are both in hand, stored on `report.plausibility`. **`CHECK_TO_COMPONENT` maps
+it to None** — a mis-specified model cannot be fixed by regenerating prose, and
+softening the wording would hide the defect rather than correct it.
 
 ## Key files
 

@@ -145,6 +145,11 @@ class ReportModel:
     # check that no section contradicts an authoritative figure.
     canonical_metrics: list[dict] = field(default_factory=list)
 
+    # Economic-plausibility findings (valuation/plausibility.py): whether the
+    # valuation is possible at all, as distinct from whether it is internally
+    # consistent. A CRITICAL entry withholds the report.
+    plausibility: list[dict] = field(default_factory=list)
+
     # Publication gate. Set by the QA pass when a critical failure is found
     # (a dangling/uncited material claim, or a section figure that contradicts a
     # canonical metric). A blocked report must not be published as final.

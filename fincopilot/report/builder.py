@@ -319,6 +319,21 @@ def build_report(
             report.consensus_target = _consensus.value_per_share
     if valuation.priced_in and valuation.priced_in.rows:
         report.priced_in = valuation.priced_in.to_dict()
+
+    # Is this valuation economically possible? Run here, where the valuation and
+    # the history are both in hand, so the check can compare the implied inputs
+    # against what this company has actually demonstrated. The findings feed the
+    # QA gate, which withholds the report on a CRITICAL one — the same mechanism
+    # that already withholds internally contradictory reports.
+    from ..valuation.plausibility import assess as assess_plausibility
+
+    report.plausibility = [
+        {
+            "check": f.check, "severity": f.severity,
+            "message": f.message, "likely_causes": f.likely_causes,
+        }
+        for f in assess_plausibility(valuation, history, country=company.country)
+    ]
     if valuation.scenarios and valuation.scenarios.cases:
         report.scenarios = valuation.scenarios.to_dict()
     if valuation.sensitivity:

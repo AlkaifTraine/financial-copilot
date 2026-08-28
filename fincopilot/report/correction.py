@@ -43,6 +43,10 @@ CHECK_TO_COMPONENT: dict[str, str | None] = {
     "consistency": None,
     "valuation_integrity": None,
     "segment_reconciliation": None,
+    # A mis-specified model cannot be written around. Rewriting the prose to
+    # sound less confident about a 93.8% implied margin would hide the defect
+    # rather than fix it — the inputs have to change, which is a human's call.
+    "valuation_plausibility": None,
 }
 
 

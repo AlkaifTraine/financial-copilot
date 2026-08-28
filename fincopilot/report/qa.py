@@ -611,6 +611,29 @@ def check_numeric_consistency(report) -> list[str]:
     return issues
 
 
+def check_valuation_plausibility(report, severity: str) -> list[str]:
+    """Surface economic-impossibility findings at ``severity``.
+
+    Computed upstream in ``valuation/plausibility.py``, where the valuation and
+    the financial history are both available; this only routes them into the
+    gate. The distinction from :func:`check_valuation_integrity` matters — that
+    one asks whether the valuation is internally *consistent*, this one asks
+    whether it is *possible*. A report can pass the first and fail the second,
+    which is precisely what happened when a DCF returned a 93.8% implied
+    operating margin: perfectly consistent arithmetic on a mis-specified model.
+    """
+    issues: list[str] = []
+    for finding in getattr(report, "plausibility", None) or []:
+        if finding.get("severity") != severity:
+            continue
+        message = finding.get("message", "")
+        causes = finding.get("likely_causes") or []
+        if causes:
+            message += " Likely cause(s): " + "; ".join(causes) + "."
+        issues.append(message)
+    return issues
+
+
 def check_valuation_integrity(report) -> list[str]:
     """Deterministic guard against valuation double-counting (item #1).
 
@@ -668,6 +691,8 @@ CHECK_SEVERITY = {
     "consistency": "CRITICAL",              # probabilities sum, scenario order, rating sign
     "canonical_metric": "CRITICAL",         # a figure contradicting a canonical value
     "valuation_integrity": "CRITICAL",      # double-counting / base-case != DCF
+    "valuation_plausibility": "CRITICAL",   # a valuation that is not economically possible
+    "valuation_plausibility_soft": "MEDIUM",  # a strong call worth stating explicitly
     "segment_reconciliation": "CRITICAL",   # segments don't sum to consolidated revenue
     "annualization_arithmetic": "CRITICAL", # a quarter annualized to a wrong YoY number
     "numeric_consistency": "CRITICAL",      # a prose driver/scenario number != the model
@@ -694,6 +719,8 @@ def run_qa(report) -> list[dict]:
     cannot. Idempotent: re-runnable by the correction loop without duplicating warnings.
     """
     results = {
+        "valuation_plausibility": check_valuation_plausibility(report, "CRITICAL"),
+        "valuation_plausibility_soft": check_valuation_plausibility(report, "MEDIUM"),
         "consistency": check_consistency(report),
         "canonical_metric": check_metric_consistency(report),
         "valuation_integrity": check_valuation_integrity(report),

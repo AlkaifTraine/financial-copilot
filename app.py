@@ -316,6 +316,22 @@ def load_company(query: str, *, refresh: bool = False) -> None:
                     f"{company.name}. Valuation and the research report are "
                     f"unavailable; document search and chat still work."
                 )
+            elif getattr(history.recency, "blocks_valuation", False):
+                # Recent enough to be audited, too old to value on. Naming the
+                # year and the age matters: the failure being prevented is a
+                # report dated today that silently leads with two-year-old
+                # figures, which reads as current to anyone who does not check.
+                r = history.recency
+                st.session_state["financials_unavailable"] = (
+                    f"The newest audited figures available for {company.name} "
+                    f"are FY{r.latest_fiscal_year} (year ended "
+                    f"{r.latest_period_end}), {r.months_old:.0f} months old. At "
+                    f"least one full year has been reported since. Valuing on "
+                    f"that base would describe a materially older company, so "
+                    f"the valuation and report are withheld — document search "
+                    f"and chat still work, and the filings indexed below do "
+                    f"include the newer years."
+                )
 
             if history and history.is_sufficient_for_dcf:
                 status.write("Building the valuation...")

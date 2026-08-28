@@ -149,6 +149,11 @@ class FinancialHistory:
 
     notes: list[str] = field(default_factory=list)
 
+    # How old the newest audited year is, attached by ``load_financials`` (see
+    # fundamentals/recency.py). Optional so a hand-built history in a test or a
+    # script still constructs; absent, recency simply is not enforced.
+    recency: object | None = field(default=None, repr=False)
+
     # -- access -----------------------------------------------------------
 
     @property
@@ -217,14 +222,26 @@ class FinancialHistory:
 
     @property
     def is_sufficient_for_dcf(self) -> bool:
-        """Whether there is enough history to build a defensible forecast.
+        """Whether there is enough *and* recent enough history to forecast on.
 
         Two years of revenue and one usable free cash flow figure is the
         minimum; below that a DCF is arithmetic dressed up as analysis.
+
+        Staleness disqualifies on the same terms. A base year two reporting
+        cycles old does not make a valuation conservative, it makes it a
+        valuation of a company that no longer exists in that form — its growth
+        rate, margin and capital intensity have all since been superseded by
+        results the company has already published. This is checked here rather
+        than at the call sites because every caller already asks this question
+        before valuing, so there is no path that can skip it.
         """
         revenue_points = len(self.series("revenue"))
         fcf_points = len(self.series("free_cash_flow"))
-        return revenue_points >= 2 and fcf_points >= 1
+        if revenue_points < 2 or fcf_points < 1:
+            return False
+        if self.recency is not None and getattr(self.recency, "blocks_valuation", False):
+            return False
+        return True
 
     def to_dict(self) -> dict:
         payload = asdict(self)

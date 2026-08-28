@@ -242,7 +242,7 @@ streamlit run app.py
 `SEC_USER_AGENT` must contain a real contact email — the SEC rejects requests without one. Without it the app still runs, falling back to web search and skipping audited XBRL financials.
 
 ```bash
-pytest tests/ -q                        # 368 unit tests (offline, no key needed)
+pytest tests/ -q                        # 407 unit tests (offline, no key needed)
 python -m fincopilot.eval.run NVIDIA    # retrieval ablation
 python scripts/robustness_check.py      # valuation invariants across 8 company profiles
 ```
