@@ -13,21 +13,37 @@ __all__ = ["FinancialHistory", "FiscalYear", "load_financials"]
 
 
 def load_financials(company: Company, *, max_years: int = 6) -> FinancialHistory | None:
-    """Load the best available financial history for ``company``.
+    """Load the audited financial history for ``company``.
 
-    SEC XBRL is preferred wherever it exists: it is the company's own tagged,
-    audited data, with a concept and an accession number behind every figure.
-    yfinance is the fallback for issuers outside SEC jurisdiction.
+    Statement figures come only from the company's own regulatory filings:
+
+    * **SEC XBRL** (`companyfacts`) for SEC filers, and
+    * **Ind-AS XBRL** filed with the NSE for Indian issuers.
+
+    Both are concept-tagged, audited, and traceable to a specific filing.
+    There is deliberately **no fallback to a market-data vendor for statement
+    figures**: a vendor's numbers are unattributable, silently restated, and
+    cannot be tied to a filing, which is precisely the provenance a valuation
+    depends on. When no audited source is available this returns ``None`` and
+    the caller must decline to value the company rather than proceed on
+    figures it cannot stand behind.
+
+    Live market data — share price, share count, beta, analyst targets — is a
+    separate concern and does come from yfinance: it is a quote, not a
+    reported figure, and no filing contains it.
     """
-    from . import market, xbrl
+    from . import indas, market, xbrl
 
     history = xbrl.fetch(company, max_years=max_years)
 
     if history is None:
-        log.info("falling back to yfinance statements for %s", company.ticker)
-        history = market.fetch_statements(company, max_years=max_years)
+        history = indas.fetch(company, max_years=max_years)
 
     if history is None:
+        log.warning(
+            "no audited filing-derived financials for %s; declining to value it",
+            company.ticker,
+        )
         return None
 
     market.attach_market_data(history, company)

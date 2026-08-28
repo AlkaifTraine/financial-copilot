@@ -132,6 +132,7 @@ def get_json_cached(
     *,
     sec: bool = False,
     ttl_seconds: int = 86_400,
+    headers: dict[str, str] | None = None,
 ) -> Any | None:
     """GET a JSON document, served from disk cache when fresh.
 
@@ -147,7 +148,7 @@ def get_json_cached(
         except (json.JSONDecodeError, OSError):
             pass  # corrupt cache entry; fall through and refetch
 
-    response = sec_get(url) if sec else request(url)
+    response = sec_get(url) if sec else request(url, headers=headers)
     if response is None or response.status_code != 200:
         # Stale cache beats no data at all when the upstream is down.
         if path.exists():

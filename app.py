@@ -59,6 +59,7 @@ _DEFAULTS = {
     "report": None,
     "messages": [],
     "load_error": None,
+    "financials_unavailable": None,
 }
 
 for key, default in _DEFAULTS.items():
@@ -114,7 +115,10 @@ def reset_company_state() -> None:
     valuation on screen under the new company's name — which would be a
     correctness problem, not a cosmetic one.
     """
-    for key in ("index", "ingest", "history", "valuation", "report", "load_error"):
+    for key in (
+        "index", "ingest", "history", "valuation", "report",
+        "load_error", "financials_unavailable",
+    ):
         st.session_state[key] = _DEFAULTS[key]
     st.session_state["messages"] = []
 
@@ -168,6 +172,18 @@ def load_company(query: str, *, refresh: bool = False) -> None:
             status.write("Loading audited financials...")
             history = load_financials(company)
             st.session_state["history"] = history
+
+            if history is None:
+                # Strict provenance gate: statement figures come only from the
+                # company's own audited filing. Without one there is no
+                # valuation — an estimate built on unattributable numbers is
+                # exactly the failure this project exists to avoid. Retrieval
+                # and grounded chat over the documents still work.
+                st.session_state["financials_unavailable"] = (
+                    f"No audited filing-derived financials are available for "
+                    f"{company.name}. Valuation and the research report are "
+                    f"unavailable; document search and chat still work."
+                )
 
             if history and history.is_sufficient_for_dcf:
                 status.write("Building the valuation...")
@@ -249,6 +265,36 @@ with st.sidebar:
             f"{len(st.session_state['ingest'].accepted)} documents"
         )
 
+    # Operational footing, visible rather than buried in logs: what this
+    # session has actually spent, and what the report store saved.
+    with st.expander("Service status"):
+        from fincopilot import llm as _llm
+        from fincopilot.report import store as _store
+
+        usage = _llm.get_usage()
+        st.caption(
+            f"**This session** · {usage['calls']} model calls · "
+            f"${usage['cost_usd']:.3f} spent"
+            + (f" · {usage['fallbacks']} served by fallback" if usage["fallbacks"] else "")
+        )
+
+        stats = _store.stats()
+        if stats["reports"]:
+            st.caption(
+                f"**Report store** · {stats['reports']} stored · "
+                f"{stats['serves']} reused · ~${stats['saved_usd']:.2f} of "
+                f"regeneration avoided"
+            )
+
+        providers = sorted({d["model_name"] for d in _llm._model_list()})
+        has_fallback = bool(_llm._fallback_map())
+        st.caption(
+            f"**Routing** · {len(providers)} model groups · "
+            + ("cross-provider fallback active"
+               if has_fallback
+               else "no fallback configured (set GEMINI_API_KEY)")
+        )
+
     if not config.is_sec_configured():
         st.divider()
         st.warning(
@@ -287,6 +333,9 @@ if _url_company and not st.session_state["index"] and not st.session_state.get("
 
 if st.session_state["load_error"]:
     st.error(st.session_state["load_error"])
+
+if st.session_state.get("financials_unavailable"):
+    st.warning(st.session_state["financials_unavailable"], icon="⚠️")
 
 if not st.session_state["index"]:
     ui.hero(
@@ -383,20 +432,10 @@ with overview_tab:
             if history.share_price else "-",
         )
 
-        source_label = (
-            "SEC XBRL — the company's own audited, tagged filing data"
-            if history.source == "sec_xbrl"
-            else "a structured market-data provider"
+        st.caption(
+            f"Financial figures sourced from {history.source_label}. "
+            f"Share price and share count are live market data."
         )
-        st.caption(f"Financial figures sourced from {source_label}.")
-
-        if history.source != "sec_xbrl":
-            st.info(
-                f"{company.name} does not file with the SEC, so financial figures come "
-                f"from a structured market data provider rather than audited XBRL. "
-                f"Verify against the company's own reports before relying on them.",
-                icon="ℹ️",
-            )
 
     st.divider()
     st.markdown("#### Source documents")
@@ -492,7 +531,14 @@ with chat_tab:
             st.rerun()
 
         with st.spinner("Searching the filings..."):
-            answer = ask(messages[-1]["content"], index, history=messages[:-1])
+            answer = ask(
+                messages[-1]["content"],
+                index,
+                history=messages[:-1],
+                # The audited figures behind the valuation, so a fundamentals
+                # question is answered from the same numbers the DCF uses.
+                financials=st.session_state["history"],
+            )
 
         messages.append(
             {
@@ -734,18 +780,67 @@ with report_tab:
 
     if not valuation or not valuation.dcf:
         st.warning("A valuation is required before a report can be generated.")
-    elif st.button("Generate report", type="primary"):
-        try:
-            enforce("report")
-            with st.status("Writing report...", expanded=True) as status:
-                def progress(stage: str, detail: str) -> None:
-                    status.write(f"`{stage}` {detail}")
+    else:
+        force_rebuild = st.checkbox(
+            "Force regeneration",
+            value=False,
+            help=(
+                "Ignore the stored report and write a fresh one. Normally a report "
+                "is reused until the company files something new, which keeps the "
+                "output stable and the cost near zero."
+            ),
+        )
 
-                report = build_report(
-                    company, history, valuation, ingest, index, progress=progress
+    if valuation and valuation.dcf and st.button("Generate report", type="primary"):
+        try:
+            from fincopilot.report import store as report_store
+            from fincopilot.valuation.overrides import load_overrides
+
+            key = report_store.fingerprint(
+                company, history, ingest, load_overrides(company.slug)
+            )
+
+            cached = None if force_rebuild else report_store.get(key)
+            if cached is not None:
+                # The stored model holds chart *paths*, and charts/ is a working
+                # directory that gets cleaned. Both renderers degrade quietly to
+                # no chart, so a served report could silently come back missing
+                # its figures. Charts are deterministic matplotlib built from the
+                # same valuation — no model call, no cost — so rebuild them.
+                from fincopilot.report import charts as chart_builder
+
+                cached.charts = chart_builder.build_all(
+                    valuation, history, slug=company.slug
                 )
-                st.session_state["report"] = report
-                status.update(label="Report ready", state="complete", expanded=False)
+
+                # Nothing was generated, so nothing was spent and no rate-limit
+                # allowance is consumed: this is the same document, re-rendered.
+                st.session_state["report"] = cached
+                st.success(
+                    "Served the stored report for this filing set — no model "
+                    "calls were made. Tick *Force regeneration* to rewrite it."
+                )
+            else:
+                enforce("report")
+                with st.status("Writing report...", expanded=True) as status:
+                    def progress(stage: str, detail: str) -> None:
+                        status.write(f"`{stage}` {detail}")
+
+                    from fincopilot import llm
+
+                    before = llm.get_usage().get("cost_usd", 0.0)
+                    report = build_report(
+                        company, history, valuation, ingest, index, progress=progress
+                    )
+                    spent = llm.get_usage().get("cost_usd", 0.0) - before
+
+                    st.session_state["report"] = report
+                    report_store.put(key, report, cost_usd=spent)
+                    status.update(
+                        label=f"Report ready (${spent:.3f})",
+                        state="complete",
+                        expanded=False,
+                    )
         except RateLimitExceeded as limit:
             st.warning(str(limit))
         except Exception as exc:  # never let a report failure blank the page

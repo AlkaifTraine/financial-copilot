@@ -453,17 +453,11 @@ def build_report(
         )
 
     # Provenance of the numbers is stated in the report, not assumed.
-    if history.source == "sec_xbrl":
-        report.warnings.append(
-            "Financial statement figures are taken from SEC XBRL company facts "
-            "(the company's own tagged filing data)."
-        )
-    else:
-        report.warnings.append(
-            f"{company.name} does not file with the SEC. Financial figures come "
-            f"from a structured market data provider rather than audited XBRL "
-            f"filings, and should be verified against the company's own reports."
-        )
+    report.warnings.append(
+        f"Financial statement figures are taken from {history.source_label}. "
+        "Share price, share count and beta are live market data; no filing "
+        "contains them."
+    )
 
     # Final QA over the fully assembled report, then the v8 self-correction loop: if a
     # CRITICAL/HIGH issue is found, regenerate the responsible component with the QA

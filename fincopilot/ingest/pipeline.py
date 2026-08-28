@@ -24,10 +24,39 @@ from pathlib import Path
 
 from .. import config
 from ..resolve import Company
-from . import edgar, registry, websearch
-from .models import ORIGIN_EDGAR, ORIGIN_TRUST, SourceDocument
+from . import edgar, nse, registry, websearch
+from .models import ANNUAL, ORIGIN_EDGAR, ORIGIN_NSE, ORIGIN_TRUST, SourceDocument
 
 log = logging.getLogger(__name__)
+
+
+def nse_documents(company: Company) -> list[SourceDocument]:
+    """Annual reports the NSE holds for an Indian issuer.
+
+    The exchange archive is authoritative and complete, so these outrank the
+    same PDFs found by web search. Only the *documents* come from here — the
+    statement figures come from the Ind-AS XBRL these filings are paired with
+    (see :mod:`fincopilot.fundamentals.indas`), never from the PDF text.
+    """
+    documents: list[SourceDocument] = []
+    for record in nse.annual_report_pdfs(company.base_ticker):
+        try:
+            fiscal_year = int(record.get("to_year") or 0) or None
+        except (TypeError, ValueError):
+            fiscal_year = None
+
+        documents.append(
+            SourceDocument(
+                doc_type=ANNUAL,
+                title=f"Annual Report {record.get('from_year')}-{record.get('to_year')}",
+                url=record["url"],
+                origin=ORIGIN_NSE,
+                fiscal_year=fiscal_year,
+                fiscal_period="FY",
+                content_type="pdf",
+            )
+        )
+    return documents
 
 
 @dataclass
@@ -143,11 +172,23 @@ def ingest(
             )
             report("discover", "EDGAR skipped (SEC_USER_AGENT not configured)")
 
+    # Indian issuers file with the exchange, not the SEC. The NSE's own archive
+    # is the authoritative source for them, and unlike a search engine it
+    # returns the complete set of annual reports rather than whichever ones
+    # happen to rank that day.
+    exchange_docs: list[SourceDocument] = []
+    if company.country == "IN":
+        report("discover", "querying NSE corporate filings")
+        exchange_docs = nse_documents(company)
+        if exchange_docs:
+            result.sources_used.append(ORIGIN_NSE)
+        report("discover", f"NSE returned {len(exchange_docs)} annual reports")
+
     report("discover", "searching investor-relations sites")
     web_docs = websearch.discover(company)
     report("discover", f"web search returned {len(web_docs)} candidates")
 
-    candidates = _merge(edgar_docs, web_docs)
+    candidates = _merge(edgar_docs, exchange_docs, web_docs)
 
     if not candidates:
         result.notes.append(

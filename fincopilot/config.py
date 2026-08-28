@@ -94,6 +94,76 @@ WRITER_MODEL = "gpt-4.1"
 TEMPERATURE_FACTUAL = 0.0
 TEMPERATURE_PROSE = 0.2
 
+# ---------------------------------------------------------------------------
+# Routing: providers, load balancing, fallbacks
+# ---------------------------------------------------------------------------
+# Calls go through a LiteLLM Router rather than a single provider SDK, so a
+# provider outage degrades the service instead of stopping it. Two router
+# groups mirror the FAST/WRITER blend above; each has an OpenAI primary and a
+# Gemini fallback of comparable capability.
+#
+# Load balancing happens *within* a group: add more deployments (extra keys,
+# regions, or an Azure mirror) under the same group name and the router spreads
+# traffic across them, respecting each one's rpm/tpm ceiling. Fallback happens
+# *between* groups: only when every deployment in the primary group fails or is
+# in cooldown does the router cross to another provider. The two are kept
+# separate deliberately — silently load-balancing a report's prose across two
+# vendors would make output quality vary run to run for no stated reason.
+FAST_GROUP = "fincopilot-fast"
+WRITER_GROUP = "fincopilot-writer"
+FAST_FALLBACK_GROUP = "fincopilot-fast-fallback"
+WRITER_FALLBACK_GROUP = "fincopilot-writer-fallback"
+
+# Gemini stand-ins, matched to the tier they cover. The key is read at router
+# build time from GEMINI_API_KEY; absent one, the fallback deployments are
+# simply not registered and the router runs OpenAI-only.
+FALLBACK_FAST_MODEL = "gemini/gemini-2.5-flash"
+FALLBACK_WRITER_MODEL = "gemini/gemini-2.5-pro"
+
+# Per-deployment ceilings the router load-balances against. Set below the
+# account's real limits so the router shifts traffic before the provider starts
+# returning 429s.
+OPENAI_RPM = int(get_secret("OPENAI_RPM", "400") or 400)
+GEMINI_RPM = int(get_secret("GEMINI_RPM", "150") or 150)
+
+ROUTER_TIMEOUT_SECONDS = 120
+ROUTER_NUM_RETRIES = 2          # per deployment, before the router moves on
+ROUTER_ALLOWED_FAILS = 3        # failures before a deployment is cooled down
+ROUTER_COOLDOWN_SECONDS = 60
+
+# "simple-shuffle" is weighted-random across healthy deployments and needs no
+# shared state. The usage-based strategies need Redis to coordinate across
+# processes; this app runs as a single Streamlit process, so the extra
+# dependency would buy nothing.
+ROUTER_STRATEGY = get_secret("ROUTER_STRATEGY", "simple-shuffle") or "simple-shuffle"
+
+# A hard ceiling on what one report/session may spend, enforced in-process by
+# the guardrail layer. A runaway retry loop is a billing incident, not just a
+# bug, so the limit is on money rather than only on call count.
+MAX_USD_PER_PROCESS = float(get_secret("MAX_USD_PER_PROCESS", "25") or 25)
+
+# Every chat question is first classified by FAST_MODEL to judge what it is for
+# (see guardrails.classify_query). Set to "0" to disable — the deterministic
+# scans and the grounding requirement still apply.
+QUERY_CLASSIFIER_ENABLED = (
+    get_secret("QUERY_CLASSIFIER_ENABLED", "1") or "1"
+) not in ("0", "", "false", "False")
+
+# How sure the classifier must be before a question is actually refused. A
+# false negative is cheap — the question proceeds to a grounded, cited answer.
+# A false positive tells a real analyst no, which is expensive, so uncertain
+# verdicts are not acted on.
+QUERY_BLOCK_CONFIDENCE = float(get_secret("QUERY_BLOCK_CONFIDENCE", "0.7") or 0.7)
+
+
+# ---------------------------------------------------------------------------
+# Embeddings
+# ---------------------------------------------------------------------------
+# Deliberately NOT routed and NOT given a cross-provider fallback. An index is
+# built from one embedding model's vector space; serving a query from a
+# different model — even at the same dimension — silently returns nonsense
+# neighbours, and at a different dimension it fails outright. A provider
+# fallback here would corrupt retrieval rather than protect it.
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 EMBEDDING_BATCH_SIZE = 128          # OpenAI accepts up to 2048 inputs per call

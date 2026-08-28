@@ -9,6 +9,10 @@ streamlit==1.57.0
 python-dotenv==1.2.2
 
 # ---- LLM + RAG ----
+# Model calls go through a LiteLLM Router (fincopilot/llm.py) for cross-provider
+# fallback and load balancing; the OpenAI SDK is still the transport it uses for
+# OpenAI deployments and is what serves embeddings directly.
+litellm==1.80.7
 openai==2.37.0
 langchain-core==1.4.0
 langchain-openai==1.2.1

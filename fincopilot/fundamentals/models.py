@@ -15,6 +15,20 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
+# Where a set of statements came from. Every entry here is a regulatory filing
+# by the company itself, concept-tagged and audited — that is the entry
+# requirement, not a nice-to-have. A market-data vendor is deliberately absent:
+# its figures cannot be traced to a filing, so they cannot support a valuation.
+SOURCE_LABELS: dict[str, str] = {
+    "sec_xbrl": (
+        "SEC XBRL company facts — the company's own audited, tagged filing data"
+    ),
+    "nse_indas_xbrl": (
+        "audited consolidated Ind-AS XBRL filed with the NSE — the company's "
+        "own tagged filing data"
+    ),
+}
+
 
 @dataclass
 class FiscalYear:
@@ -115,7 +129,7 @@ class FinancialHistory:
     ticker: str
     company_name: str
     currency: str = "USD"
-    source: str = ""                      # "sec_xbrl" or "yfinance"
+    source: str = ""                      # a key of SOURCE_LABELS
     years: list[FiscalYear] = field(default_factory=list)
 
     # Live market data — the valuation's link to today's price.
@@ -136,6 +150,21 @@ class FinancialHistory:
     notes: list[str] = field(default_factory=list)
 
     # -- access -----------------------------------------------------------
+
+    @property
+    def source_label(self) -> str:
+        """Human-readable provenance, for the UI and the report."""
+        return SOURCE_LABELS.get(self.source, self.source or "an unknown source")
+
+    @property
+    def is_audited_filing(self) -> bool:
+        """Whether these figures come from the company's own audited filing.
+
+        Always true for a history the loader will return — it declines to build
+        one otherwise. Kept explicit so the report states provenance from the
+        data rather than from an assumption about how it was loaded.
+        """
+        return self.source in SOURCE_LABELS
 
     @property
     def latest(self) -> FiscalYear | None:

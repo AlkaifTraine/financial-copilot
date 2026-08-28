@@ -28,9 +28,13 @@ DOC_TYPE_LABELS = {
 # Provenance. Ranked: a filing straight from the regulator outranks a PDF found
 # by a search engine, and this ordering is used to break ties during merging.
 ORIGIN_EDGAR = "sec_edgar"
+ORIGIN_NSE = "nse_exchange"
 ORIGIN_WEB = "web_search"
 
-ORIGIN_TRUST = {ORIGIN_EDGAR: 2, ORIGIN_WEB: 1}
+# Higher wins when the same disclosure turns up from two places. A document
+# served by the regulator or the exchange is the authoritative copy; a search
+# engine's copy of it is a convenience mirror.
+ORIGIN_TRUST = {ORIGIN_EDGAR: 3, ORIGIN_NSE: 2, ORIGIN_WEB: 1}
 
 
 @dataclass
