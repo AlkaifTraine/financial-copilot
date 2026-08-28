@@ -159,8 +159,18 @@ MAX_USD_PER_PROCESS = float(get_secret("MAX_USD_PER_PROCESS", "25") or 25)
 # app is bring-your-own-key only — which is the safe way to fail.
 ACCESS_CODE = get_secret("ACCESS_CODE", "") or ""
 
-# Off by default so local development and the tests are never gated.
-REQUIRE_ACCESS = (get_secret("REQUIRE_ACCESS", "0") or "0") not in (
+# ON by default. This protects the owner's API key on any deployment where
+# nobody remembered to configure anything, which is exactly the deployment most
+# at risk. The safe default for "a public URL in front of a paid API" is not
+# "let everyone spend the owner's money".
+#
+# With the gate on and no ACCESS_CODE set, the app is bring-your-own-key only:
+# visitors must supply their own key, so the owner's credits cannot be spent by
+# a stranger at all. Setting ACCESS_CODE is what re-opens the owner's key to
+# people holding the code.
+#
+# Local development opts out with REQUIRE_ACCESS=0 in .env.
+REQUIRE_ACCESS = (get_secret("REQUIRE_ACCESS", "1") or "1") not in (
     "0", "", "false", "False",
 )
 
