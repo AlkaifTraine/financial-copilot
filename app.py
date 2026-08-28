@@ -302,7 +302,10 @@ def load_company(query: str, *, refresh: bool = False) -> None:
             st.session_state["ingest"] = ingest
 
             status.write("Loading audited financials...")
-            history = load_financials(company)
+            # The already-downloaded filings are passed in: when the XBRL
+            # endpoint stops short of what has been reported, the audited
+            # results PDFs among them carry the newer years.
+            history = load_financials(company, ingest=ingest)
             st.session_state["history"] = history
 
             if history is None:

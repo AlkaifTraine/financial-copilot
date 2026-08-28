@@ -3,7 +3,7 @@
 This tracks the "AI summary → institutional-quality equity research" upgrade.
 Read this first in a new session; do **not** re-explore or rebuild the platform.
 
-**Current as of 2026-08-28.** 407 tests pass; `main` was clean at `89a1e5d` before
+**Current as of 2026-08-28.** 454 tests pass; `main` was clean at `89a1e5d` before
 the audited-provenance work below. If you change code, update this file in the same commit —
 a stale handoff here is what makes a fresh session hallucinate the project's state.
 
@@ -32,7 +32,7 @@ checked in a browser; the site itself opens fine off-network (e.g. mobile data).
   thesis argues against — never folded into our own rating. (User decision.)
 - **Auto-deploy is live.** Push to `main` → GitHub Actions runs `pytest tests/`
   → deploys to fincopilot.duckdns.org. **Never push broken code.** Before any
-  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (407 tests), and a
+  commit: `venv/Scripts/python.exe -m pytest tests/ -q` must pass (454 tests), and a
   report must render (see Verify below).
 - **A blocking QA finding withholds the report.** Do not "fix" a blocked report by
   demoting its check to advisory — that was the v7 failure the v8 gate exists to
@@ -46,13 +46,18 @@ checked in a browser; the site itself opens fine off-network (e.g. mobile data).
   ticker + a fingerprint of the reported numbers (not the retrieved context), which
   is what makes a company's DCF reproduce exactly until its filings change. Clearing
   it is what makes the valuation wander between runs.
-- **Statement numbers come only from audited, concept-tagged XBRL.** SEC
-  `companyfacts` or Ind-AS XBRL filed with the NSE — never PDF text, never a
-  market-data vendor. yfinance is for live market data only (price, shares,
-  beta, analyst targets). If neither XBRL source has the company,
-  `load_financials` returns `None` and it is **not valued**. Do not reintroduce
-  a vendor statement fallback to "improve coverage": that trades the project's
-  central claim for breadth. (User decision, 2026-08-28.)
+- **Statement numbers come only from the company's own audited filings** —
+  SEC `companyfacts`, Ind-AS XBRL filed with the NSE, or the audited
+  consolidated statements in a SEBI-format results PDF
+  (`fundamentals/results_pdf.py`). **Never a market-data vendor.** yfinance is
+  for live market data only (price, shares, beta, analyst targets). No audited
+  source -> `load_financials` returns `None` and the company is **not valued**.
+  Do not reintroduce a vendor statement fallback to "improve coverage": that
+  trades the project's central claim for breadth. (User decision, 2026-08-28 —
+  the decision was about *fallback on failure*, not about banning PDF
+  extraction. An earlier version of this file wrongly recorded it as "never PDF
+  text"; that was this agent's own design call after Ind-AS XBRL was found, and
+  the user corrected it.)
 - **All model calls go through `llm.complete` / `llm.complete_json`.** That is
   the only chokepoint where guardrails, spend metering and provider fallback
   are applied; a new call site that imports a provider SDK directly bypasses
@@ -550,7 +555,11 @@ False** — so every existing caller is gated without touching a call site.
 Attached in `load_financials` so no caller can get a history without its age.
 Bikaji today: FY2024, 29 months, stale, blocked.
 
-**Consequence to accept:** Bikaji currently cannot be valued at all. That is
+**RESOLVED 2026-08-28** by `fundamentals/results_pdf.py` — see below. Bikaji
+now loads FY2025+FY2026 from the audited results PDF and is `current`.
+Historical note follows.
+
+**Consequence at the time:** Bikaji could not be valued at all. That is
 correct — but it means coverage for Indian issuers is bounded by NSE's 3-year
 window. BSE has FY2025/FY2026 (`api.bseindia.com/BseIndiaAPI/api/FinancialResult/w?scripcode=<code>`,
 Bikaji = 543653) but its results attachments are **PDFs, not XBRL** — verified
@@ -580,6 +589,49 @@ Wired as `valuation_plausibility` (CRITICAL) + `valuation_plausibility_soft`
 are both in hand, stored on `report.plausibility`. **`CHECK_TO_COMPONENT` maps
 it to None** — a mis-specified model cannot be fixed by regenerating prose, and
 softening the wording would hide the defect rather than correct it.
+
+## SEBI results-PDF extraction (2026-08-28)
+
+Closes the recency gap. The NSE XBRL window ends at FY2024; the audited
+FY2025/FY2026 figures exist only in the results PDFs. `results_pdf.extract()`
+reads the **consolidated** statements from a SEBI Reg-33 filing.
+
+Verified against the real Bikaji FY2026 filing, cross-checked against an
+independently written human research report — every figure matches:
+FY26 revenue 2,993.9 Cr / PAT 254.4 Cr / CFO 304.1 Cr / FCF 126 Cr;
+FY25 revenue 2,616.8 Cr / PAT 194.2 Cr / EPS 8.01.
+
+**Four silent, expensive failure modes, each handled explicitly:**
+1. **Quarter mistaken for year (4x).** The P&L carries quarterly AND annual
+   columns, and a Q4 column and the full-year column BOTH end 31 March — the
+   date cannot separate them. Only the "Year Ended" header can, so
+   `resolve_annual_columns` **refuses** if quarterly columns are present and
+   that header is missing. Never relax this.
+2. **Units (100,000x).** No declaration found -> refuse. Plus `_sanity_scale`
+   cross-checks implied price-to-sales against market cap.
+3. **Standalone vs consolidated.** Standalone pages come first in these
+   filings; taking them drops every subsidiary.
+4. **OCR damage.** Labels ("Revenue from oaerations"), negatives ("/398.55)",
+   "[398.55]"), and split digit groups ("30,409.78" -> "30" + "409.78", a 74x
+   understatement) — all handled in `parse_number` / `_merge_split_groups`.
+
+**Two extraction modes, deliberately different.** The P&L grid parses cleanly ->
+column-based. The balance sheet and cash flow fragment so badly the detector
+splits single figures across cells ("2,23,954.23" -> "22" + "3954.23"), so
+`positional_rows()` reads word geometry instead and takes the rightmost figures
+— safe ONLY because those statements carry no quarterly columns.
+
+**Matching is argmax both ways** (`assign_rows`): one row -> one field, one
+field -> its best row. First-match-wins put total expenses into the tax line.
+
+Every year is validated against accounting identities before use and dropped if
+it fails. Wired into `load_financials(company, ingest=...)`, selected by
+`recency.freshest()` — whichever source has the newer audited year wins.
+
+**Discovery fix:** `websearch._score` now boosts filings dated on a fiscal year
+end (`_ANNUAL_PERIOD_END`). Both annual and quarterly results use the same
+`Financial-Results-DD-MM-YYYY` naming, and the crawler had been keeping a
+September quarterly over the March annual filing.
 
 ## Key files
 

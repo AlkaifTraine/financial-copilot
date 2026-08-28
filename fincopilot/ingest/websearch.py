@@ -56,6 +56,14 @@ _CLASSIFIERS: list[tuple[str, re.Pattern]] = [
     (EARNINGS, re.compile(r"earnings|press[-_ ]?release|financial[-_ ]?results|\bresults\b", re.I)),
 ]
 
+# A results filing whose period ends on a fiscal year end (31 March in India,
+# 31 December elsewhere) is the ANNUAL one. Quarterly filings share the same
+# file-naming convention, so the date is the only thing separating them.
+_ANNUAL_PERIOD_END = re.compile(
+    r"(31[-_.]0?3[-_.]\d{2,4}|0?3[-_.]31[-_.]\d{2,4}"
+    r"|31[-_.]12[-_.]\d{2,4}|12[-_.]31[-_.]\d{2,4})"
+)
+
 _FINANCIAL_URL_HINTS = re.compile(
     r"annual|quarter|earnings|financial|investor|report|results|presentation|10-?k|10-?q",
     re.I,
@@ -151,6 +159,16 @@ def _score(url: str, company: Company) -> float:
     if year:
         # Recency matters far more than any single hosting signal.
         score += (year - config.current_year()) * 40
+
+    # An ANNUAL results filing outranks a quarterly one of the same vintage.
+    # Both are published under the same "Financial-Results-DD-MM-YYYY" naming,
+    # and only the date distinguishes them — a filing dated 31 March or 31
+    # December is the full-year one, and it is the only one carrying audited
+    # annual figures. Without this the crawler kept a September quarterly in
+    # preference to the March annual filing, which is the document the audited
+    # full-year statements actually live in.
+    if _ANNUAL_PERIOD_END.search(lowered):
+        score += 45
 
     return score
 
