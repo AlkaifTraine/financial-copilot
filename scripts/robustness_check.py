@@ -94,11 +94,79 @@ def _invariants(v) -> list[str]:
     return failures
 
 
+# ---------------------------------------------------------------------------
+# Calibration
+# ---------------------------------------------------------------------------
+# The per-name invariants above check that the engine is INTERNALLY CONSISTENT:
+# a positive fair value, a sane WACC, a rating whose sign matches its upside.
+# They passed while the engine rated six of eight names SELL at an average of
+# -70%, including Microsoft, Apple, Google and Coca-Cola — which is not a
+# contrarian view, it is a broken model, and "all invariants held" hid it.
+#
+# Calibration is a property of the DISTRIBUTION, invisible one name at a time.
+# Each individual assumption can be defensible while their product is not: set
+# growth, margin, discount rate and terminal rate each at the cautious end and
+# the joint result lands nowhere near the centre of the range.
+#
+# So this is a population check, deliberately loose. It is not asserting that
+# the market is right — the engine exists to disagree with the market — only
+# that a mixed basket of well-covered large caps should not come back almost
+# uniformly and enormously overvalued.
+
+# A basket this size should not be one-sided. Six of eight in one direction is
+# the model talking, not the market.
+MAX_ONE_SIDED_SHARE = 0.70
+
+# Mega-caps are the most heavily analysed securities in existence. Being 70%
+# away from the market on Apple is a statement about the model.
+MEGA_CAPS = {"AAPL", "MSFT", "GOOGL"}
+MAX_MEGA_CAP_DEVIATION = 0.45
+
+
+def _calibration(rows: list[dict]) -> list[str]:
+    """Distribution-level failures. Empty when the engine looks calibrated."""
+    failures: list[str] = []
+    rated = [r for r in rows if r.get("rating") in ("BUY", "HOLD", "SELL")]
+    if len(rated) < 4:
+        return failures
+
+    for label in ("SELL", "BUY"):
+        share = sum(1 for r in rated if r["rating"] == label) / len(rated)
+        if share > MAX_ONE_SIDED_SHARE:
+            failures.append(
+                f"{share:.0%} of rated names are {label} "
+                f"({sum(1 for r in rated if r['rating'] == label)}/{len(rated)}) — "
+                f"a mixed basket coming back this one-sided is systematic bias, "
+                f"not insight"
+            )
+
+    for row in rated:
+        if row["ticker"] in MEGA_CAPS and row.get("upside") is not None:
+            if abs(row["upside"]) > MAX_MEGA_CAP_DEVIATION:
+                failures.append(
+                    f"{row['ticker']} is {row['upside']:+.0%} from the market — "
+                    f"on a mega-cap this size, that is the model being wrong "
+                    f"rather than the market"
+                )
+
+    deviations = [abs(r["upside"]) for r in rated if r.get("upside") is not None]
+    if deviations:
+        median = sorted(deviations)[len(deviations) // 2]
+        if median > 0.50:
+            failures.append(
+                f"median absolute deviation from market is {median:.0%} — the "
+                f"engine disagrees with every price by a wide margin, which is "
+                f"a property of the assumptions, not of the companies"
+            )
+    return failures
+
+
 def main() -> int:
     print(f"{'ticker':7} {'cur':4} {'WACC':>5} {'y1':>5} {'CAGR':>5} {'margin':>6} "
           f"{'fair':>10} {'upside':>7} {'rating':10} flags")
     print("-" * 96)
     any_fail = False
+    rows: list[dict] = []
     for tk, note in UNIVERSE:
         try:
             r = _row(tk, note)
@@ -117,13 +185,31 @@ def main() -> int:
         print(f"{tk:7} {r['currency']:4} {r['wacc'] * 100:4.1f}% {r['y1'] * 100:4.0f}% "
               f"{r['cagr'] * 100:4.0f}% {r['margin'] * 100:5.0f}% {fv:>10} {upside:>7} "
               f"{r['rating']:10} {flags}")
+        rows.append({**r, "ticker": tk})
         if not r["ok"]:
             any_fail = True
             for f in r["failures"]:
                 print(f"        !! INVARIANT: {f}")
 
     print("-" * 96)
-    print("RESULT:", "FAIL — invariant violated" if any_fail else "pass — all invariants held")
+
+    calibration_failures = _calibration(rows)
+    if calibration_failures:
+        any_fail = True
+        print("CALIBRATION — the distribution, which no single name reveals:")
+        for failure in calibration_failures:
+            print(f"  !! {failure}")
+    else:
+        rated = [r for r in rows if r.get("rating") in ("BUY", "HOLD", "SELL")]
+        spread = ", ".join(
+            f"{sum(1 for r in rated if r['rating'] == label)} {label}"
+            for label in ("BUY", "HOLD", "SELL")
+        )
+        print(f"CALIBRATION — ok ({spread})")
+
+    print("-" * 96)
+    print("RESULT:", "FAIL — invariant or calibration violated" if any_fail
+          else "pass — invariants held and the distribution looks calibrated")
     return 1 if any_fail else 0
 
 

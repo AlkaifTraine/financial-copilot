@@ -249,6 +249,29 @@ def _interpolated_size_premium(market_cap_usd: float) -> tuple[float, str]:
     return 0.0, "mid-cap"
 
 
+def _horizon_beta(blume_beta: float, weight: float) -> float:
+    """Shrink a beta toward the market over the forecast horizon — one way only.
+
+    A long-dated DCF is dominated by cash flows arriving when the business is
+    more mature, and maturity moves beta toward the market. That is true of a
+    HIGH beta: today's hyper-growth name becomes tomorrow's large cap, and
+    NVIDIA's raw 2.2 discounted at face value produces a rate no analyst uses.
+
+    It is not true of a low one. A defensive company's low beta reflects what it
+    sells, not what stage it is at — Coca-Cola has sat near 0.6 for decades and
+    shows no sign of reverting to the market. Pulling those names up toward 1.0
+    raised the discount rate on precisely the durable compounders the engine
+    already valued worst, on the strength of a reversion that does not happen.
+
+    So the shrink applies above 1.0 and stops below it, and Blume's correction —
+    which is symmetric, and statistical rather than economic — still applies to
+    every beta beforehand.
+    """
+    if blume_beta <= 1.0:
+        return blume_beta
+    return weight * blume_beta + (1 - weight) * 1.0
+
+
 def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
     """Build-up size premium added to the cost of equity, by market cap (in USD)."""
     market_cap_usd = _market_cap_usd(history)
@@ -354,7 +377,7 @@ def compute_wacc(
     # Discounting them at a high-growth spot beta over-penalises the terminal
     # value, so the discount rate uses the horizon-average beta.
     horizon_weight = config.BETA_HORIZON_WEIGHT
-    beta_dcf = horizon_weight * beta + (1 - horizon_weight) * 1.0
+    beta_dcf = _horizon_beta(beta, horizon_weight)
     ledger.add(
         Assumption(
             key="beta_dcf",

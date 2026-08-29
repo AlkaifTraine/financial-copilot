@@ -429,7 +429,11 @@ DCF_GROWTH_DECAY = 0.70
 # company eventually becomes the whole economy).
 #            (floor, cap, default)
 TERMINAL_GROWTH_BY_COUNTRY = {
-    "US": (0.01, 0.04, 0.025),
+    # Cap at long-run nominal GDP growth (~4.2%): a mature company can grow
+    # WITH the economy forever, just never faster. The 2.5% convention dates
+    # from a lower-inflation era and, paired with a nominal discount rate,
+    # quietly assumes every company shrinks in real terms in perpetuity.
+    "US": (0.015, 0.042, 0.030),
     "IN": (0.040, 0.065, 0.050),    # floor at RBI's 4% inflation target;
                                     # nominal GDP ~10-11% is the ceiling
     "GB": (0.01, 0.04, 0.025),
@@ -496,6 +500,21 @@ BETA_BLUME_WEIGHT = 0.67
 # places roughly equal weight on the measured beta and the market (0.67 * 0.75 ≈
 # 0.5) — NVIDIA's raw 2.2 becomes a ~1.6 horizon beta, ~11.5-12% WACC, in the
 # range practitioners actually use for the name rather than 14.5%.
+# Applied ON TOP of Blume, so the two corrections compound: a raw beta ended up
+# 50% of the way to 1.0 against Blume's standard 33%. The horizon argument is
+# sound on its own — a ten-year DCF is dominated by cash flows arriving when the
+# company is more mature, and closer to the market — but it is now applied only
+# where it is true.
+#
+# Mean reversion in beta is ASYMMETRIC. A high beta really does decay: today's
+# hyper-growth name is tomorrow's large cap. A low beta usually does not —
+# Coca-Cola has sat near 0.6 for decades, because defensiveness is a structural
+# property of selling groceries, not a temporary state to revert out of.
+#
+# Applying it in both directions therefore taxed exactly the wrong companies:
+# it raised the discount rate on durable defensive compounders, which is where
+# the engine's valuations were furthest from any sane range. See
+# wacc._horizon_beta.
 BETA_HORIZON_WEIGHT = 0.75
 
 # Size premium added to the cost of equity, by market capitalisation. The
