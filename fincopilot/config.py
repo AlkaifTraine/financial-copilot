@@ -412,7 +412,43 @@ DCF_FORECAST_YEARS = 10
 # to prevent. It is the single largest lever on a growth name's fair value, so
 # it is set conservatively but not punitively.
 DCF_GROWTH_DECAY = 0.70
-TERMINAL_GROWTH_BOUNDS = (0.01, 0.04)   # must stay below long-run GDP growth
+# Terminal growth is a NOMINAL rate and must match the currency the cash flows
+# are in — the same rule this file already applies to the risk-free rate, and
+# for the same reason. A rupee DCF discounts at an Indian nominal rate near 13%
+# because that rate carries Indian inflation; growing the same cash flows at a
+# US-style 2.5% then has the company shrinking a few points a year in real terms
+# forever, which is not a conservative assumption but an incoherent one.
+#
+# The error is invisible and one-directional. It never looks wrong — 2.5% reads
+# as prudence — while it widens the (WACC - g) denominator that sets terminal
+# value, and terminal value is most of a DCF. For India it was pricing a growing
+# consumer business as a melting ice cube.
+#
+# Bounds are floored near expected inflation (below it means real decline
+# forever) and capped below long-run nominal GDP growth (above it means the
+# company eventually becomes the whole economy).
+#            (floor, cap, default)
+TERMINAL_GROWTH_BY_COUNTRY = {
+    "US": (0.01, 0.04, 0.025),
+    "IN": (0.040, 0.065, 0.050),    # floor at RBI's 4% inflation target;
+                                    # nominal GDP ~10-11% is the ceiling
+    "GB": (0.01, 0.04, 0.025),
+    "DE": (0.01, 0.035, 0.020),
+    "JP": (0.00, 0.025, 0.010),
+    "CN": (0.02, 0.055, 0.035),
+}
+_DEFAULT_TERMINAL_GROWTH = (0.01, 0.04, 0.025)
+
+
+def terminal_growth_for(country: str | None) -> tuple[float, float, float]:
+    """(floor, cap, default) terminal growth for a country's nominal currency."""
+    return TERMINAL_GROWTH_BY_COUNTRY.get(
+        (country or "").upper(), _DEFAULT_TERMINAL_GROWTH
+    )
+
+
+# Retained for callers without a country to hand; prefer terminal_growth_for().
+TERMINAL_GROWTH_BOUNDS = (0.01, 0.04)
 WACC_BOUNDS = (0.05, 0.20)              # sanity rails on the discount rate
 
 # Terminal operating margin is an economic judgement about the mature state of

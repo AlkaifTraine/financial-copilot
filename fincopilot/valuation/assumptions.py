@@ -446,24 +446,36 @@ def derive_inputs(
     # -- terminal growth --------------------------------------------------
     # Computed first because it forms the floor for the year-one growth bound.
     proposed_terminal, terminal_rationale = _model_value(proposal, "terminal_growth_rate")
+    # Currency-matched: a rupee DCF discounts at an Indian nominal rate, so
+    # it must grow at one too.
+    tg_floor, tg_cap, tg_default = config.terminal_growth_for(
+        getattr(company, "country", None)
+    )
+    tg_bounds = (tg_floor, tg_cap)
+    tg_currency = getattr(company, "currency", None) or "these"
+
     if proposed_terminal is None:
-        terminal_growth, terminal_clamped = 0.025, False
+        terminal_growth, terminal_clamped = tg_default, False
         terminal_source = SOURCE_DEFAULT
-        terminal_derivation = "Standard long-run rate of 2.5%"
+        terminal_derivation = (
+            f"Long-run nominal rate of {tg_default * 100:.1f}% for "
+            f"{tg_currency} cash flows"
+        )
         terminal_rationale = (
-            "Perpetual growth must stay below long-run nominal GDP growth; no "
-            "company outgrows the economy forever."
+            "Perpetual growth is a NOMINAL rate and must match the currency the "
+            "cash flows are in — the same rule as the risk-free rate. It sits "
+            "above expected inflation, since below it the business shrinks in "
+            "real terms forever, and below long-run nominal GDP growth, since "
+            "above it the company eventually becomes the economy."
         )
         raw_terminal = None
     else:
-        terminal_growth, terminal_clamped = _clamp(
-            proposed_terminal, config.TERMINAL_GROWTH_BOUNDS
-        )
+        terminal_growth, terminal_clamped = _clamp(proposed_terminal, tg_bounds)
         terminal_source = SOURCE_MODEL
         terminal_derivation = (
             f"Model estimate {proposed_terminal * 100:.1f}%, bounded to "
-            f"[{config.TERMINAL_GROWTH_BOUNDS[0] * 100:.0f}%, "
-            f"{config.TERMINAL_GROWTH_BOUNDS[1] * 100:.0f}%]"
+            f"[{tg_bounds[0] * 100:.1f}%, {tg_bounds[1] * 100:.1f}%] for "
+            f"{tg_currency} cash flows"
         )
         raw_terminal = proposed_terminal if terminal_clamped else None
 
@@ -476,7 +488,7 @@ def derive_inputs(
             source=terminal_source,
             derivation=terminal_derivation,
             rationale=terminal_rationale,
-            bounds=config.TERMINAL_GROWTH_BOUNDS,
+            bounds=tg_bounds,
             clamped=terminal_clamped,
             raw_value=raw_terminal,
             provenance=_model_provenance(proposal, "terminal_growth_rate"),
