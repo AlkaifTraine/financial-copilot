@@ -123,6 +123,7 @@ def _run_case(
             tax_rate=inputs.tax_rate,
             depreciation_pct=inputs.depreciation_pct,
             capex_pct=inputs.capex_pct,
+            growth_capex_per_revenue=inputs.growth_capex_per_revenue,
             working_capital_pct=inputs.working_capital_pct,
             wacc=wacc,
             terminal_growth=terminal_growth,

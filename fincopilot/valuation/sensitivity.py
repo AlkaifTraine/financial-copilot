@@ -31,6 +31,7 @@ def build_competition_sensitivity(
     tax_rate: float,
     depreciation_pct: float,
     capex_pct: float,
+    growth_capex_per_revenue: float | None = None,
     working_capital_pct: float,
     wacc: float,
     terminal_growth: float,
@@ -67,7 +68,8 @@ def build_competition_sensitivity(
             fair_value = run_dcf(
                 base_revenue=base_revenue, base_year=base_year, growth_path=shifted,
                 margin_path=margin_path, tax_rate=tax_rate, depreciation_pct=depreciation_pct,
-                capex_pct=capex_pct, working_capital_pct=working_capital_pct, wacc=wacc,
+                capex_pct=capex_pct,
+            growth_capex_per_revenue=growth_capex_per_revenue, working_capital_pct=working_capital_pct, wacc=wacc,
                 terminal_growth=terminal_growth, net_debt=net_debt,
                 shares_outstanding=shares_outstanding, currency=currency,
             ).fair_value_per_share
@@ -94,6 +96,7 @@ def build_grid(
     tax_rate: float,
     depreciation_pct: float,
     capex_pct: float,
+    growth_capex_per_revenue: float | None = None,
     working_capital_pct: float,
     base_wacc: float,
     base_growth: float,
@@ -132,6 +135,7 @@ def build_grid(
                     tax_rate=tax_rate,
                     depreciation_pct=depreciation_pct,
                     capex_pct=capex_pct,
+            growth_capex_per_revenue=growth_capex_per_revenue,
                     working_capital_pct=working_capital_pct,
                     wacc=wacc,
                     terminal_growth=growth,

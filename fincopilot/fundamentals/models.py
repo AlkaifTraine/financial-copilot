@@ -114,9 +114,28 @@ class FiscalYear:
 
     @property
     def working_capital(self) -> float | None:
-        if self.current_assets is not None and self.current_liabilities is not None:
-            return self.current_assets - self.current_liabilities
-        return None
+        """Operating working capital: receivables and inventory net of payables.
+
+        Cash and short-term investments are removed deliberately. Including
+        them measures the treasury, not the operating cycle — a profitable
+        company that parks its earnings in term deposits shows "working
+        capital" rising in step with revenue, and a DCF then charges that
+        build-up against free cash flow every forecast year as though the cash
+        had been consumed by growth.
+
+        The effect is large and one-directional: for Bikaji it put incremental
+        working capital at 25% of incremental revenue — the model's ceiling —
+        against a cash conversion cycle of roughly 23 days, which is nearer 6%.
+        The better the company is at converting profit to cash, the more this
+        definition penalises it.
+        """
+        if self.current_assets is None or self.current_liabilities is None:
+            return None
+        operating_assets = self.current_assets
+        for treasury in (self.cash_and_equivalents, self.short_term_investments):
+            if treasury is not None:
+                operating_assets -= treasury
+        return operating_assets - self.current_liabilities
 
     def to_dict(self) -> dict:
         return asdict(self)

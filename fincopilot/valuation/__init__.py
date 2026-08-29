@@ -62,6 +62,7 @@ def _dcf_from(inputs, wacc, net_debt, shares, currency):
         tax_rate=inputs.tax_rate,
         depreciation_pct=inputs.depreciation_pct,
         capex_pct=inputs.capex_pct,
+        growth_capex_per_revenue=inputs.growth_capex_per_revenue,
         working_capital_pct=inputs.working_capital_pct,
         wacc=wacc,
         terminal_growth=inputs.terminal_growth,

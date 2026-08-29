@@ -62,6 +62,9 @@ class ForecastInputs:
     tax_rate: float = 0.21
     depreciation_pct: float = 0.03
     capex_pct: float = 0.04
+    # Growth capital per unit of revenue added. None falls back to holding
+    # total capex at a flat share of revenue.
+    growth_capex_per_revenue: float | None = None
     working_capital_pct: float = _DEFAULT_WORKING_CAPITAL_PCT
     terminal_growth: float = 0.025
     growth_decay: float = 0.70
@@ -75,6 +78,52 @@ def _ratio_to_revenue(history: FinancialHistory, attribute: str, last_n: int = 3
         if value is not None and year.revenue:
             ratios.append(abs(value) / year.revenue)
     return sum(ratios) / len(ratios) if ratios else None
+
+
+_GROWTH_CAPEX_BOUNDS = (0.0, 1.5)
+
+
+def _growth_capex_intensity(history: FinancialHistory) -> float | None:
+    """Capital spending above depreciation, per unit of revenue added.
+
+    This is the reinvestment a business needs to *grow*, separated from the
+    maintenance spending that merely keeps the existing assets running. Measured
+    across the available years so a single lumpy plant does not set the rate:
+
+        (capex - D&A) summed  /  revenue added summed
+
+    Years where revenue fell are skipped — capital spent while revenue shrinks
+    says nothing about the cost of growth. Returns ``None`` when history is too
+    short or the company has not been growing, in which case the caller keeps
+    the flat capex ratio.
+
+    Bounded at 1.5x because a company spending more than one-and-a-half rupees
+    of growth capital per rupee of new revenue, sustained, is not a business the
+    model should extrapolate.
+    """
+    increments: list[tuple[float, float]] = []
+    years = [y for y in history.years if y.revenue]
+
+    for previous, current in zip(years, years[1:]):
+        added = current.revenue - previous.revenue
+        if added <= 0:
+            continue
+        capex = abs(current.capex) if current.capex is not None else None
+        depreciation = current.depreciation_amortisation
+        if capex is None or depreciation is None:
+            continue
+        increments.append((max(capex - depreciation, 0.0), added))
+
+    if not increments:
+        return None
+
+    total_growth_capex = sum(g for g, _ in increments)
+    total_added = sum(a for _, a in increments)
+    if total_added <= 0:
+        return None
+
+    intensity = total_growth_capex / total_added
+    return min(max(intensity, _GROWTH_CAPEX_BOUNDS[0]), _GROWTH_CAPEX_BOUNDS[1])
 
 
 def _clamp(value: float, bounds: tuple[float, float]) -> tuple[float, bool]:
@@ -626,6 +675,30 @@ def derive_inputs(
         )
     )
 
+    growth_capex_per_revenue = _growth_capex_intensity(history)
+    if growth_capex_per_revenue is not None:
+        ledger.add(
+            Assumption(
+                key="growth_capex_per_revenue",
+                label="Growth capex per unit of new revenue",
+                value=growth_capex_per_revenue,
+                unit="x",
+                source=SOURCE_HISTORICAL,
+                derivation=(
+                    "Capital spending above depreciation, divided by the "
+                    "revenue added, averaged over recent years"
+                ),
+                rationale=(
+                    "Splits capital spending into the part that sustains the "
+                    "existing asset base and the part that buys growth. Only "
+                    "the second scales with expansion, so it falls away as "
+                    "growth fades; holding total capex flat instead projects a "
+                    "build-out into perpetuity and understates a company that "
+                    "is currently investing ahead of demand."
+                ),
+            )
+        )
+
     # Incremental working capital per unit of incremental revenue, measured
     # from the two most recent years where both are available.
     working_capital_pct = _DEFAULT_WORKING_CAPITAL_PCT
@@ -694,6 +767,7 @@ def derive_inputs(
         tax_rate=tax_rate,
         depreciation_pct=depreciation_pct,
         capex_pct=capex_pct,
+        growth_capex_per_revenue=growth_capex_per_revenue,
         working_capital_pct=working_capital_pct,
         terminal_growth=terminal_growth,
         growth_decay=growth_decay,

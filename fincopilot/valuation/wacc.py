@@ -206,21 +206,56 @@ def _market_cap_usd(history: FinancialHistory) -> float | None:
     return cap * rate
 
 
+_SIZE_LABELS = {0.0: "small-cap", 2e9: "mid-cap", 10e9: "large-cap", 200e9: "mega-cap"}
+
+
+def _interpolated_size_premium(market_cap_usd: float) -> tuple[float, str]:
+    """Size premium as a smooth function of market cap, not a step.
+
+    The tiers are a summary of a continuous empirical effect, and reading them
+    as hard steps puts a cliff at each boundary: a company at USD 1.9bn takes
+    the small-cap 2.5% while one at USD 2.1bn takes the mid-cap 1.0%. Those two
+    businesses are indistinguishable by size, yet the step hands them discount
+    rates 1.5 points apart — which on a long-dated DCF is a double-digit
+    difference in fair value decided by which side of a round number the
+    company happened to close at.
+
+    Interpolating on log market cap keeps the tier values exactly at their
+    thresholds and moves smoothly between them, so the premium still falls as
+    companies get larger and no boundary changes a valuation discontinuously.
+    """
+    import math
+
+    # Ascending by threshold, so neighbouring tiers can be found by scanning.
+    tiers = sorted(config.SIZE_PREMIUM_TIERS, key=lambda pair: pair[0])
+
+    if market_cap_usd <= tiers[0][0] or market_cap_usd <= 0:
+        return tiers[0][1], _SIZE_LABELS.get(tiers[0][0], "small-cap")
+    if market_cap_usd >= tiers[-1][0]:
+        return tiers[-1][1], _SIZE_LABELS.get(tiers[-1][0], "mega-cap")
+
+    for (low_cap, low_premium), (high_cap, high_premium) in zip(tiers, tiers[1:]):
+        if low_cap <= market_cap_usd <= high_cap:
+            if low_cap <= 0:
+                # The bottom band has no lower bound to interpolate from; the
+                # smallest companies simply carry the full premium.
+                return low_premium, _SIZE_LABELS.get(low_cap, "small-cap")
+            span = math.log(high_cap) - math.log(low_cap)
+            position = (math.log(market_cap_usd) - math.log(low_cap)) / span
+            premium = low_premium + position * (high_premium - low_premium)
+            nearer = high_cap if position >= 0.5 else low_cap
+            return premium, _SIZE_LABELS.get(nearer, "mid-cap")
+
+    return 0.0, "mid-cap"
+
+
 def _size_premium(history: FinancialHistory, ledger: AssumptionLedger) -> float:
     """Build-up size premium added to the cost of equity, by market cap (in USD)."""
     market_cap_usd = _market_cap_usd(history)
     if market_cap_usd is None:
         return 0.0
 
-    premium = 0.0
-    label = "mid-cap"
-    for threshold, value in config.SIZE_PREMIUM_TIERS:
-        if market_cap_usd >= threshold:
-            premium = value
-            label = {0.0: "small-cap", 2e9: "mid-cap", 10e9: "large-cap", 200e9: "mega-cap"}.get(
-                threshold, "mid-cap"
-            )
-            break
+    premium, label = _interpolated_size_premium(market_cap_usd)
 
     same_currency = (history.currency or "USD").upper() == "USD"
     cap_text = (

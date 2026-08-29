@@ -40,7 +40,14 @@ class TestSizePremium:
         assert _size_premium(_history(market_cap=50e9), AssumptionLedger()) == pytest.approx(0.0)
 
     def test_smallcap_gets_a_premium(self):
-        assert _size_premium(_history(market_cap=1e9), AssumptionLedger()) == pytest.approx(0.025)
+        # The premium is interpolated on log market cap rather than stepped, so
+        # the assertion is on the property that matters — a sub-$2bn company
+        # carries a real positive premium — not on one tier's exact value.
+        premium = _size_premium(_history(market_cap=1e9), AssumptionLedger())
+        assert 0.010 < premium <= 0.025
+
+    def test_a_micro_cap_carries_the_full_premium(self):
+        assert _size_premium(_history(market_cap=100e6), AssumptionLedger()) == pytest.approx(0.025)
 
     def test_premium_is_monotonic_and_never_negative(self):
         # Non-increasing in size, and the largest tiers are zero — never negative.
@@ -52,7 +59,11 @@ class TestSizePremium:
     def test_local_currency_cap_converted_before_bucketing(self):
         # A ₹300bn mid-cap (~$3.6bn) must NOT clear the USD mega-cap threshold.
         prem = _size_premium(_history(market_cap=300e9, currency="INR"), AssumptionLedger())
-        assert prem == pytest.approx(0.010)          # mid-cap, not mega-cap
+        # The point of this test is the CONVERSION: unconverted, ₹300bn would
+        # clear the USD mega-cap threshold and take a zero premium. A positive
+        # premium proves the rupee figure was converted before bucketing.
+        assert prem > 0.0
+        assert prem < 0.010                          # ~$3.6bn sits above mid-cap
 
     def test_large_rupee_company_is_large_cap(self):
         # TCS-scale ~₹14tn (~$168bn) lands large-cap: no size premium (pure CAPM).
@@ -62,6 +73,33 @@ class TestSizePremium:
     def test_unknown_currency_skips_premium(self):
         prem = _size_premium(_history(market_cap=500e9, currency="XYZ"), AssumptionLedger())
         assert prem == 0.0
+
+
+class TestSizePremiumIsContinuous:
+    """No cliff at a tier boundary.
+
+    Read as steps, the tiers handed a $1.9bn company 2.5% and a $2.1bn company
+    1.0% — indistinguishable businesses with discount rates 1.5 points apart,
+    which on a long-dated DCF is a double-digit difference in fair value
+    decided by which side of a round number they closed at.
+    """
+
+    def test_no_jump_across_a_tier_boundary(self):
+        below = _size_premium(_history(market_cap=1.95e9), AssumptionLedger())
+        above = _size_premium(_history(market_cap=2.05e9), AssumptionLedger())
+        assert abs(below - above) < 0.001
+
+    def test_it_falls_smoothly_as_size_rises(self):
+        caps = [3e8, 5e8, 1e9, 2e9, 4e9, 8e9]
+        premia = [_size_premium(_history(market_cap=c), AssumptionLedger()) for c in caps]
+        assert premia == sorted(premia, reverse=True)
+        # and no single step is a cliff
+        assert all(abs(a - b) < 0.008 for a, b in zip(premia, premia[1:]))
+
+    def test_the_anchors_still_hold_their_values(self):
+        assert _size_premium(_history(market_cap=2e9), AssumptionLedger()) == pytest.approx(0.010)
+        assert _size_premium(_history(market_cap=250e6), AssumptionLedger()) == pytest.approx(0.025)
+        assert _size_premium(_history(market_cap=10e9), AssumptionLedger()) == pytest.approx(0.0)
 
 
 class TestHorizonBeta:

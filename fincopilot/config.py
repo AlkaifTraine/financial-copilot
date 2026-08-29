@@ -472,11 +472,24 @@ BETA_HORIZON_WEIGHT = 0.75
 # adjustment: their cost of equity is pure CAPM (Ke = Rf + beta*ERP), which is the
 # transparent, defensible construction. Only small and mid caps carry the (positive,
 # empirically grounded) premium. Bounds are (min_market_cap_inclusive, premium).
+# Values are anchors, not steps: `wacc._interpolated_size_premium` interpolates
+# between them on log market cap. Read as steps they put a cliff at each
+# boundary — a company at $1.9bn taking 2.5% while one at $2.1bn takes 1.0%,
+# two businesses of indistinguishable size handed discount rates 1.5 points
+# apart, which is a double-digit swing in fair value decided by which side of a
+# round number they closed at.
+#
+# The $250m anchor exists because the band below $2bn was previously flat at the
+# full small-cap premium, which charged a $1.9bn mid-cap the same risk as a
+# $50m micro-cap. The size effect is steep only among genuinely small
+# companies; by CRSP/Duff & Phelps deciles a ~$2bn company sits near the middle,
+# not at the small-cap extreme.
 SIZE_PREMIUM_TIERS = (
     (200e9, 0.0),       # >= $200bn  : mega-cap, none (pure CAPM)
     (10e9, 0.0),        # $10-200bn  : large-cap, none (pure CAPM)
-    (2e9, 0.010),       # $2-10bn    : mid-cap, +1.0%
-    (0.0, 0.025),       # < $2bn     : small-cap, +2.5%
+    (2e9, 0.010),       # $2bn       : mid-cap anchor, +1.0%
+    (250e6, 0.025),     # $250m      : small-cap anchor, +2.5%
+    (0.0, 0.025),       # < $250m    : micro-cap, +2.5% (no lower anchor)
 )
 
 # The size tiers above are in absolute USD, but market cap arrives in the

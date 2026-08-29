@@ -37,6 +37,8 @@ def run_dcf(
     depreciation_pct: float,
     capex_pct: float,
     working_capital_pct: float,
+    growth_capex_per_revenue: float | None = None,
+    max_capex_pct: float = 0.25,
     wacc: float,
     terminal_growth: float,
     net_debt: float,
@@ -49,7 +51,14 @@ def run_dcf(
         growth_path: revenue growth for each forecast year, e.g. ``[0.45, 0.30]``.
         margin_path: operating margin for each forecast year; same length.
         depreciation_pct: D&A as a share of revenue.
-        capex_pct: capital expenditure as a share of revenue.
+        capex_pct: capital expenditure as a share of revenue. Used only as a
+            fallback when ``growth_capex_per_revenue`` is unavailable.
+        growth_capex_per_revenue: capital spending above depreciation per unit
+            of *incremental* revenue, measured from history. When given, capex
+            is modelled as maintenance (tracking depreciation) plus growth
+            spending that scales with revenue added — so it falls as growth
+            fades, instead of projecting a build-out into perpetuity.
+        max_capex_pct: ceiling on total capex as a share of revenue.
         working_capital_pct: incremental working capital as a share of the
             *change* in revenue — growth consumes cash before it produces it.
 
@@ -84,8 +93,31 @@ def run_dcf(
         ebit = revenue * margin
         nopat = ebit * (1 - tax_rate)
         depreciation = revenue * depreciation_pct
-        capex = revenue * capex_pct
         change_in_wc = (revenue - previous_revenue) * working_capital_pct
+
+        # Capital spending has two parts that behave completely differently,
+        # and collapsing them into one ratio is what breaks the valuation of
+        # any company mid-investment-cycle.
+        #
+        # Maintenance capex sustains the existing asset base and tracks
+        # depreciation. Growth capex buys new capacity and scales with how much
+        # revenue is being added — so it falls away as growth fades.
+        #
+        # Held as a single constant share of revenue, a company building ahead
+        # of demand has its build-out spending projected into perpetuity: the
+        # terminal year, growing at 2.5%, keeps paying for expansion it no
+        # longer does. Terminal value dominates a DCF, so this understates fair
+        # value severely and systematically — and it looks like prudence rather
+        # than an error, which is why it survives review.
+        if growth_capex_per_revenue is None:
+            capex = revenue * capex_pct
+        else:
+            incremental_revenue = max(revenue - previous_revenue, 0.0)
+            capex = depreciation + growth_capex_per_revenue * incremental_revenue
+            # A business cannot under-invest below depreciation indefinitely,
+            # and should not be modelled spending more than its own history
+            # at its most expansionary.
+            capex = min(max(capex, depreciation), revenue * max_capex_pct)
 
         free_cash_flow = nopat + depreciation - capex - change_in_wc
 

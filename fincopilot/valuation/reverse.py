@@ -46,6 +46,7 @@ def implied_growth(
     tax_rate: float,
     depreciation_pct: float,
     capex_pct: float,
+    growth_capex_per_revenue: float | None = None,
     working_capital_pct: float,
     wacc: float,
     terminal_growth: float,
@@ -74,6 +75,7 @@ def implied_growth(
             tax_rate=tax_rate,
             depreciation_pct=depreciation_pct,
             capex_pct=capex_pct,
+            growth_capex_per_revenue=growth_capex_per_revenue,
             working_capital_pct=working_capital_pct,
             wacc=wacc,
             terminal_growth=terminal_growth,
@@ -296,6 +298,11 @@ def build_priced_in(
             margin_path=inputs.margin_path,
             terminal_growth=inputs.terminal_growth,
             capex_pct=capex_pct,
+            # Deliberately NOT the growth-capex model here. This solver moves
+            # capex intensity as its lever to find the cash margin the price
+            # implies; deriving capex from growth instead would override the
+            # very variable being solved for and the search would not move.
+            growth_capex_per_revenue=None,
             **common,
         ).fair_value_per_share
 

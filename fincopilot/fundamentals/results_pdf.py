@@ -89,13 +89,20 @@ _PL_ROWS: dict[str, list[str]] = {
     "diluted_eps": ["(b) diluted (inr)", "diluted (inr)", "diluted"],
 }
 
+# Balance-sheet rows, deliberately few. This page fragments worse than the
+# others — the detector splits single figures across cells, and a "TOTAL ASSETS"
+# line arrives merged with the equity header that follows it — so only the rows
+# that survived hand-verification against the filing are read.
+#
+# Current assets and current liabilities are NOT extracted. They read
+# plausibly but wrongly (current assets came out near twice the filed figure),
+# and they feed working capital, where being wrong is expensive: the DCF
+# charges the difference against free cash flow in every forecast year. Left
+# absent, the working-capital assumption falls back to a stated default, which
+# is a known approximation instead of a confident error.
 _BS_ROWS: dict[str, list[str]] = {
-    "total_assets": ["total assets"],
-    "current_assets": ["total current assets", "current assets"],
-    "current_liabilities": ["total current liabilities", "current liabilities"],
     "shareholders_equity": ["total equity", "total equity attributable to owners"],
     "cash_and_equivalents": ["cash and cash equivalents"],
-    "borrowings_current": ["borrowings"],
 }
 
 _CF_ROWS: dict[str, list[str]] = {
@@ -784,7 +791,6 @@ def extract(local_path: str, *, doc_label: str = "results PDF",
         for name in (
             "revenue", "cost_of_revenue", "pretax_income", "tax_expense",
             "net_income", "diluted_eps", "depreciation_amortisation",
-            "total_assets", "current_assets", "current_liabilities",
             "shareholders_equity", "cash_and_equivalents",
             "operating_cash_flow", "capex",
         ):
@@ -799,9 +805,6 @@ def extract(local_path: str, *, doc_label: str = "results PDF",
         other = values.get("other_income")
         if pretax is not None and finance is not None and other is not None:
             entry.operating_income = pretax + finance - other
-
-        if "borrowings_current" in values:
-            entry.total_debt = values["borrowings_current"]
 
         history.years.append(entry)
 
