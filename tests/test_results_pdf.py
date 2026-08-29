@@ -314,3 +314,71 @@ class TestDiscoveryVersioning:
         path.write_text(json.dumps(payload), encoding="utf-8")
 
         assert registry.read_manifest(company) is None
+
+
+class TestOcrTolerantUnits:
+    """One Bikaji filing declares "All Amounts In JNR Lakhs" — the OCR turned
+    INR into JNR. Requiring a correctly spelled currency discarded a statement
+    whose unit word was perfectly legible."""
+
+    @pytest.mark.parametrize("header,multiplier", [
+        ("(All Amounts In JNR Lakhs Unless Otherwise Stated)", 1e5),
+        ("(All Amounts In INR Lakhs, Unless Otherwise Stated)", 1e5),
+        ("All amounts in Rs. Crores", 1e7),
+        ("All Amounts in ₹ Millions", 1e6),
+        ("all amounts are in INR thousands", 1e3),
+    ])
+    def test_the_unit_is_read_even_when_the_currency_is_mangled(self, header, multiplier):
+        assert rp.detect_units(header)[0] == multiplier
+
+    def test_it_still_refuses_when_no_unit_is_present(self):
+        assert rp.detect_units("Statement of Consolidated Financial Results")[0] is None
+        assert rp.detect_units("All Amounts In INR Zorkles")[0] is None
+
+
+class TestCombiningSources:
+    """XBRL and the results filings cover different spans; taking only one
+    leaves the DCF with two fiscal years and a single growth rate."""
+
+    def _history(self, source, years):
+        from fincopilot.fundamentals.models import FinancialHistory, FiscalYear
+        h = FinancialHistory(ticker="X.NS", company_name="X", currency="INR", source=source)
+        h.years = [
+            FiscalYear(fiscal_year=fy, period_end=f"{fy}-03-31", revenue=rev)
+            for fy, rev in years
+        ]
+        return h
+
+    def test_non_overlapping_spans_are_merged(self):
+        from fincopilot.fundamentals.recency import combine
+        older = self._history("nse_indas_xbrl", [(2023, 1.0), (2024, 2.0)])
+        newer = self._history("sebi_results_pdf", [(2025, 3.0), (2026, 4.0)])
+        merged = combine(older, newer)
+        assert [y.fiscal_year for y in merged.years] == [2023, 2024, 2025, 2026]
+
+    def test_a_shared_year_comes_from_the_fresher_source(self):
+        from fincopilot.fundamentals.recency import combine
+        older = self._history("nse_indas_xbrl", [(2024, 100.0), (2025, 200.0)])
+        newer = self._history("sebi_results_pdf", [(2025, 200.5), (2026, 300.0)])
+        merged = combine(older, newer)
+        fy2025 = next(y for y in merged.years if y.fiscal_year == 2025)
+        assert fy2025.revenue == pytest.approx(200.5)
+
+    def test_sources_that_disagree_are_not_spliced(self):
+        """A shared year read two entirely different ways is a free correctness
+        check. Disagreement means one is wrong, so the merge is abandoned."""
+        from fincopilot.fundamentals.recency import combine
+        older = self._history("nse_indas_xbrl", [(2024, 100.0), (2025, 200.0)])
+        newer = self._history("sebi_results_pdf", [(2025, 500.0), (2026, 300.0)])
+        merged = combine(older, newer)
+        assert [y.fiscal_year for y in merged.years] == [2025, 2026]
+        assert merged.source == "sebi_results_pdf"
+
+    def test_a_single_source_passes_through(self):
+        from fincopilot.fundamentals.recency import combine
+        only = self._history("sebi_results_pdf", [(2025, 1.0), (2026, 2.0)])
+        assert combine(None, only) is only
+
+    def test_no_sources_returns_none(self):
+        from fincopilot.fundamentals.recency import combine
+        assert combine(None, None) is None

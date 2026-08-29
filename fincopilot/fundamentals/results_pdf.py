@@ -56,9 +56,14 @@ _UNIT_MULTIPLIER = {
     "thousand": 1e3, "thousands": 1e3,
     "rupee": 1.0, "rupees": 1.0,
 }
-_UNIT_PATTERN = re.compile(
-    r"all\s+amounts?\s+(?:are\s+)?in\s+(?:INR|Rs\.?|₹)?\s*([A-Za-z]+)", re.I
-)
+# The declaration is found by locating "all amounts … in" and then scanning the
+# next few words for a unit we recognise, rather than assuming the unit is the
+# very next token. The currency symbol sits between them and the OCR mangles it
+# — one Bikaji filing reads "All Amounts In JNR Lakhs" — so requiring a
+# correctly spelled "INR" would discard a statement whose unit word is perfectly
+# legible. It is the unit that has to be read, not the currency.
+_UNIT_ANCHOR = re.compile(r"all\s+amounts?\s+(?:are\s+)?in\b", re.I)
+_UNIT_WINDOW_WORDS = 4
 
 # Canonical field -> the labels it may appear under. Matched fuzzily, because
 # these documents are scanned: "Expenses" arrives as "Exoenses" and
@@ -172,14 +177,15 @@ def detect_units(text: str) -> tuple[float | None, str]:
     guessing here is a 100,000x error, and every statement in this format
     carries the line.
     """
-    match = _UNIT_PATTERN.search(text)
-    if not match:
-        return None, ""
-    word = match.group(1).lower().strip(".")
-    multiplier = _UNIT_MULTIPLIER.get(word)
-    if multiplier is None:
-        return None, match.group(0)
-    return multiplier, match.group(0)
+    for anchor in _UNIT_ANCHOR.finditer(text):
+        tail = text[anchor.end(): anchor.end() + 80]
+        words = re.findall(r"[A-Za-z]+", tail)[:_UNIT_WINDOW_WORDS]
+        for word in words:
+            multiplier = _UNIT_MULTIPLIER.get(word.lower().strip("."))
+            if multiplier is not None:
+                phrase = f"{anchor.group(0)} … {word}".replace("  ", " ")
+                return multiplier, phrase
+    return None, ""
 
 
 def _norm(label: str) -> str:

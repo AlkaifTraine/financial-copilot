@@ -633,6 +633,42 @@ end (`_ANNUAL_PERIOD_END`). Both annual and quarterly results use the same
 `Financial-Results-DD-MM-YYYY` naming, and the crawler had been keeping a
 September quarterly over the March annual filing.
 
+## Document window + multi-source history (2026-08-28)
+
+`MAX_DOCUMENT_AGE_YEARS` 4 -> **2** (env-configurable), `DOC_TYPE_LIMITS`
+annual 3->2, quarterly/earnings 4->3. Bikaji: 11 documents/~1,370 pages ->
+**9 documents/1,019 pages**, dropping the FY2022 and FY2023 annual reports.
+
+The reason is retrieval quality, not storage. A four-year window put five
+annual reports in one index, and a question about revenue or strategy would
+retrieve the FY2022 discussion beside the FY2026 one with nothing in the
+passage saying which was current.
+
+**Shortening the window must not shorten the financial history**, and two
+things stop it doing so:
+
+1. `_from_results_pdf` merges across filings — each carries a restated prior
+   year, so successive filings overlap by one.
+2. `recency.combine()` merges **across sources**. XBRL retains ~3 years and the
+   results filings carry the 2 most recent, so they are largely
+   non-overlapping. Taking only one left the DCF with 2 fiscal years and a
+   single growth rate.
+
+Bikaji now loads **FY2023-FY2026** — XBRL supplying FY2023/FY2024, the results
+PDF FY2025/FY2026 — with growth of +18.5% / +12.3% / +14.4%. The FY2026 figure
+matches the human FEC report exactly.
+
+Any year both sources report is a **free correctness check**: they are read by
+completely different means (concept-tagged XBRL vs a scanned table), so a
+disagreement beyond 2% means one is wrong and `combine` abandons the merge
+rather than splicing a mis-read year into the series.
+
+**Units detection is now OCR-tolerant.** One Bikaji filing declares "All
+Amounts In JNR Lakhs" — INR mangled to JNR — and requiring a correctly spelled
+currency discarded a statement whose unit word was perfectly legible. The
+anchor is "all amounts … in", then the next few words are scanned for a
+recognised unit. It still refuses when no unit is present.
+
 ## Key files
 
 | Area | File |

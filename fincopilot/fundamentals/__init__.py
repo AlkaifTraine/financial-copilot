@@ -6,7 +6,7 @@ import logging
 
 from ..resolve import Company
 from .models import FinancialHistory, FiscalYear
-from .recency import Recency, assess as assess_recency
+from .recency import Recency, assess as assess_recency, combine
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +34,15 @@ def _from_results_pdf(company: Company, ingest) -> FinancialHistory | None:
     ]
     candidates.sort(key=lambda d: d.fiscal_year or 0, reverse=True)
 
+    # Every filing of this kind carries the current year AND its restated prior
+    # year, so successive filings overlap by one. Merging across them is what
+    # lets the document window be short without the financial history becoming
+    # short with it: two annual filings give three fiscal years, three give
+    # four. A single filing would give only two, which is barely enough to
+    # compute one growth rate.
+    merged: dict[int, object] = {}
+    used: list[str] = []
+
     for document in candidates[:4]:
         history = results_pdf.extract(
             document.local_path,
@@ -42,14 +51,33 @@ def _from_results_pdf(company: Company, ingest) -> FinancialHistory | None:
             company_name=company.name,
             currency=company.currency,
         )
-        if history is not None and history.years:
-            log.info(
-                "read audited figures for %s from %s (FY%s)",
-                company.ticker, document.label,
-                [y.fiscal_year for y in history.years],
-            )
-            return history
-    return None
+        if history is None or not history.years:
+            continue
+        used.append(document.label)
+        for year in history.years:
+            # Filings are walked newest first, and a year already taken from a
+            # newer filing is kept: that copy is the restated one, and the
+            # restatement is the figure the company now stands behind.
+            merged.setdefault(year.fiscal_year, year)
+
+    if not merged:
+        return None
+
+    combined = FinancialHistory(
+        ticker=company.ticker, company_name=company.name,
+        currency=company.currency, source=results_pdf.SOURCE,
+    )
+    combined.years = [merged[y] for y in sorted(merged)]
+    combined.notes.append(
+        f"Audited consolidated figures extracted from {len(used)} results "
+        f"filing(s): {', '.join(used)}. Where filings overlap, the restated "
+        f"figure from the more recent one is used."
+    )
+    log.info(
+        "read audited figures for %s from %d filing(s): FY%s",
+        company.ticker, len(used), [y.fiscal_year for y in combined.years],
+    )
+    return combined
 
 
 def load_financials(
@@ -91,7 +119,11 @@ def load_financials(
         # tidier when the difference is a year of reported results.
         if ingest is not None:
             from_pdf = _from_results_pdf(company, ingest)
-            history = freshest(history, from_pdf) or history
+            # Combined rather than chosen between: the XBRL endpoint and the
+            # results filings cover different, largely non-overlapping spans,
+            # and taking only one leaves the DCF with two fiscal years and a
+            # single growth rate. Shared years are cross-checked.
+            history = combine(history, from_pdf) or history
 
     if history is None:
         log.warning(

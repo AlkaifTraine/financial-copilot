@@ -192,3 +192,68 @@ def freshest(*histories):
     if not candidates:
         return None
     return min(candidates, key=lambda h: assess(h).months_old)
+
+
+# How far two sources may differ on a shared year before the overlap is treated
+# as evidence that one of them was read wrongly.
+_OVERLAP_TOLERANCE = 0.02
+
+
+def combine(*histories):
+    """Merge audited histories from different sources, newest year winning.
+
+    Sources cover different spans: the NSE results-XBRL endpoint retains about
+    three years and the results filings carry the two most recent, so for a
+    company mid-way through that window each holds years the other lacks.
+    Picking only one leaves a DCF with two fiscal years and a single growth
+    rate — enough to compute, not enough to characterise a business.
+
+    Any year the sources share is a free correctness check, because they were
+    read by completely different means: one from concept-tagged XBRL, the other
+    from a scanned table. If they disagree by more than a rounding difference,
+    one of them is wrong and the merge is abandoned rather than silently
+    splicing a mis-read year into the middle of the series.
+    """
+    candidates = [h for h in histories if h is not None and getattr(h, "years", None)]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # Newest-first, so a shared year is taken from the fresher source: that
+    # copy is the restated one the company now stands behind.
+    candidates.sort(key=lambda h: assess(h).months_old)
+
+    merged: dict[int, object] = {}
+    sources: list[str] = []
+
+    for history in candidates:
+        for year in history.years:
+            existing = merged.get(year.fiscal_year)
+            if existing is None:
+                merged[year.fiscal_year] = year
+                continue
+            a, b = existing.revenue, year.revenue
+            if a and b and abs(a - b) / max(abs(a), abs(b)) > _OVERLAP_TOLERANCE:
+                log.warning(
+                    "sources disagree on FY%s revenue (%.0f vs %.0f); using the "
+                    "freshest source alone rather than splicing them",
+                    year.fiscal_year, a, b,
+                )
+                return candidates[0]
+        sources.append(history.source)
+
+    primary = candidates[0]
+    combined = type(primary)(
+        ticker=primary.ticker, company_name=primary.company_name,
+        currency=primary.currency, source=primary.source,
+    )
+    combined.years = [merged[y] for y in sorted(merged)]
+    combined.notes = list(primary.notes)
+    if len(set(sources)) > 1:
+        combined.notes.append(
+            f"Financial history combines {' and '.join(dict.fromkeys(sources))}; "
+            f"each year comes from the most recent filing that reports it, and "
+            f"years reported by both sources were checked to agree."
+        )
+    return combined

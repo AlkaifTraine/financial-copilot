@@ -259,15 +259,26 @@ HTTP_USER_AGENT = (
 
 # How many documents of each type to keep, newest first.
 DOC_TYPE_LIMITS = {
-    "annual_report": 3,
-    "quarterly_report": 4,
-    "earnings_release": 4,
+    "annual_report": 2,
+    "quarterly_report": 3,
+    "earnings_release": 3,
     "investor_presentation": 2,
 }
 
-# Documents older than this many years are dropped: an equity view is driven by
-# recent performance, and stale filings dilute retrieval.
-MAX_DOCUMENT_AGE_YEARS = 4
+# Documents older than this many years are dropped. Retrieval quality is the
+# reason, not storage: a four-year window put five annual reports into the same
+# index, and a question about revenue or strategy would retrieve the FY2022
+# discussion alongside the FY2026 one with nothing in the passage to say which
+# was current. Narrowing the window removes that whole class of confidently
+# outdated answer, and cuts indexing time and embedding cost with it.
+#
+# At 2, the window keeps the current year and the two before it — for Bikaji,
+# FY2024 through FY2026, dropping the FY2022 and FY2023 annual reports.
+#
+# This does NOT shorten the financial history: statements come from audited
+# XBRL or from results filings, and each filing carries a restated prior year,
+# so those are merged across filings (see fundamentals/_from_results_pdf).
+MAX_DOCUMENT_AGE_YEARS = int(get_secret("MAX_DOCUMENT_AGE_YEARS", "2") or 2)
 
 
 def current_year() -> int:
