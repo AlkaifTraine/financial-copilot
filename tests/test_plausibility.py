@@ -95,11 +95,27 @@ class TestTheBikajiFailure:
         assert "mis-specified" in text
         assert "must not be published" in text
 
-    def test_the_87_percent_gap_also_blocks(self):
+    def test_a_wide_gap_alone_is_reported_but_no_longer_blocks(self):
+        """Deliberate reversal, on evidence.
+
+        This originally blocked: a gap that wide was taken as proof of a
+        modelling error. It is not. A DCF on free cash flow cannot reach the
+        multiples quality companies trade at — the market pays about 44x free
+        cash flow for Apple, which needs a discount-rate-minus-growth spread
+        near 2.25% against a defensible 5-7% — and removing every conservative
+        assumption still leaves Apple 55% below its price. Blocking on the gap
+        asserted the market is right, which is the opposite of what this engine
+        is for, and it suppressed the tool's most useful output.
+
+        The genuine failure this was catching is caught by the implied-margin
+        check above, which fires on the model being unable to reach the price
+        rather than on it disagreeing with the market.
+        """
         findings = plausibility.assess(
             _Valuation(price=618.80, fair_value=77.37), _history()
         )
-        assert any(f.severity == "CRITICAL" for f in findings)
+        assert not [f for f in findings if f.severity == "CRITICAL"]
+        assert any(f.severity == "MEDIUM" for f in findings), "still reported"
 
     def test_it_names_actionable_causes(self):
         """A bare "implausible" tells nobody where to look."""

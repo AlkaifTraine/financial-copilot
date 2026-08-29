@@ -669,6 +669,51 @@ currency discarded a statement whose unit word was perfectly legible. The
 anchor is "all amounts … in", then the next few words are scanned for a
 recognised unit. It still refuses when no unit is present.
 
+## Rating from expectations, not from the DCF gap (2026-08-28)
+
+**The change that made the report useful.** `valuation/expectations.py` +
+`Valuation.rating`.
+
+A DCF on free cash flow cannot reach the prices quality companies trade at. The
+market pays ~44x FCF for Apple, reachable only at a (WACC - g) near 2.25%
+against a defensible 5-7%. Removing EVERY conservative assumption still values
+Apple 55% below price. So the fair value is the WEAKEST output: it returns SELL
+on nearly everything, which is methodologically unsurprising and useless.
+
+The rating now comes from the reverse DCF, which was already computed. It asks
+what the price REQUIRES of each driver and compares that to what the company has
+delivered:
+
+| driver | price requires | recent | best ever | verdict |
+|---|---|---|---|---|
+| Revenue CAGR | 24.7% | 14.4% | 18.5% | unprecedented |
+| Operating margin | 40.3% | 10.4% | 14.2% | unprecedented |
+
+Verdicts (cheap -> expensive): undemanding / achievable / demanding /
+unprecedented / unreachable, mapping to BUY / HOLD / SELL. The **binding**
+(most demanding) driver sets the view, since every driver must hold at once.
+The DCF gap still decides when there is no history to judge against.
+
+**The plausibility gate was reframed to match.** It previously read an extreme
+implied margin as "our model is broken" while expectations reads it as "the
+price requires the impossible" — contradictory readings of one number. Now:
+
+- `> 2.5x best ever` -> **demanding, REPORTED** (the most useful sentence the
+  tool writes; blocking on it suppressed exactly that finding)
+- `> 5x best ever` -> **broken, BLOCKED** (the original 93.8%-vs-14.2% failure
+  is 6.6x and still blocks)
+- **wide gap alone -> reported, never blocked.** Blocking asserted the market is
+  right, which is the opposite of what the engine is for.
+
+Bug found while building this: the broken-margin ceiling used
+`max(5 x best, 60%)`, which for a 5%-margin business raised the bar from 25% to
+60% — the thinner the margins, the more it let through. The multiple now governs
+whenever there is a positive margin; the floor is only for absent/negative ones.
+
+**Result: Bikaji publishes.** SELL, qa_status PASSED, reliability A 85/100,
+$0.118 — rated on a checkable claim rather than a fair value that depended on
+the discount rate being right.
+
 ## Key files
 
 | Area | File |

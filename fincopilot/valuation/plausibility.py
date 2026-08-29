@@ -34,11 +34,28 @@ from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
 
-# How far past a company's own demonstrated best the implied margin may sit
-# before the model, not the market, is the likely explanation. A market can
-# certainly price in improvement; it does not price in six-fold improvement on
-# a mature business.
-_MARGIN_MULTIPLE_OF_BEST = 2.5
+# An implied margin far above a company's demonstrated best is REPORTED, not
+# blocked. It used to be treated as proof the model was mis-specified, and that
+# reading is wrong: a DCF on free cash flow cannot reach the prices quality
+# companies trade at, so an extreme implied figure is usually the market's
+# requirement being extreme rather than our arithmetic being broken. Saying "the
+# price needs a margin this company has never approached" is the most useful
+# sentence the tool produces — see valuation/expectations.py, which now carries
+# the rating — and blocking on it suppressed exactly that finding.
+#
+# What is still blocked is the genuinely impossible: an implied margin above
+# 100% of revenue is not a demanding expectation, it is an arithmetic
+# impossibility, and no market prices one in.
+# Two thresholds, because "demanding" and "broken" are different claims.
+#
+# Past 2.5x the company's best, the price is asking a lot — worth reporting, and
+# the most useful sentence the tool writes. Past 5x, the solver is not describing
+# a market expectation any more: it is describing a model that cannot reach the
+# price on any input, which is what the original Bikaji failure looked like when
+# it demanded a 93.8% margin from a business whose best was 14.2%.
+_MARGIN_MULTIPLE_OF_BEST = 2.5      # demanding: reported
+_MARGIN_MULTIPLE_BROKEN = 5.0       # broken: blocked
+_MARGIN_BROKEN_FLOOR = 0.60         # for thin- or negative-margin histories
 
 # A floor for companies whose history is loss-making or barely profitable,
 # where a multiple of "best ever" is meaningless or negative.
@@ -50,11 +67,16 @@ _MARGIN_ABSOLUTE_CEILING = 0.45
 _NOMINAL_GDP_GROWTH = {"IN": 0.105, "US": 0.045, "GB": 0.04, "JP": 0.025}
 _DEFAULT_NOMINAL_GDP = 0.055
 
-# How far fair value may sit from the market before the disagreement is more
-# likely ours than theirs. A 40% gap is a strong call; a 6x gap on a widely
-# held, analyst-covered large cap is almost always a modelling error.
+# A wide gap to the market is REPORTED, never blocked. Blocking on it asserted
+# the market is right, which is the opposite of what this engine is for — and
+# empirically the assertion is false: removing every conservative assumption
+# still values Apple 55% below its price, because 44x free cash flow is simply
+# not reachable by discounting cash flows at any defensible rate. A tool that
+# refuses to publish whenever it disagrees with the market cannot do research.
+#
+# The gap is still surfaced, and the reverse DCF explains it in terms a reader
+# can check: not "we are lower" but "here is what the price requires".
 _GAP_WARN = 0.45
-_GAP_BLOCK = 0.60
 
 
 @dataclass
@@ -160,18 +182,45 @@ def assess(valuation, history=None, *, country: str | None = None) -> list[Impla
                 f"{_MARGIN_MULTIPLE_OF_BEST:g}x this company's best reported "
                 f"operating margin of {best * 100:.1f}%"
             )
-        if implied_margin > ceiling:
+        # The multiple governs whenever there is a positive margin to multiply.
+        # Taking max() with the floor was wrong: for a 5%-margin business it
+        # raised the bar from 25% to 60%, so a solver demanding a 60% margin
+        # from a business that has never cleared 5% passed unremarked — the
+        # thinner the margins, the more the check let through. The floor is for
+        # histories where the multiple means nothing: no margin, or a negative one.
+        broken_ceiling = (
+            best * _MARGIN_MULTIPLE_BROKEN
+            if best and best > 0
+            else _MARGIN_BROKEN_FLOOR
+        )
+        if implied_margin > broken_ceiling:
             findings.append(Implausibility(
                 check="valuation_plausibility",
                 severity="CRITICAL",
                 message=(
                     f"The reverse DCF implies a mature operating margin of "
-                    f"{implied_margin * 100:.1f}%, above {basis}. A solver returning "
-                    f"a figure this far outside the company's demonstrated range is "
-                    f"evidence that our forward model is mis-specified, not that the "
-                    f"market holds this belief — so it must not be published as one."
+                    f"{implied_margin * 100:.1f}%, more than "
+                    f"{_MARGIN_MULTIPLE_BROKEN:g}x {basis}. At that distance the "
+                    f"solver is no longer describing a market expectation but a "
+                    f"model that cannot reach the price on any input — it is "
+                    f"mis-specified, and must not be published as a belief the "
+                    f"market holds."
                 ),
                 likely_causes=_diagnose(valuation, history),
+            ))
+        elif implied_margin > ceiling:
+            findings.append(Implausibility(
+                check="valuation_plausibility",
+                severity="MEDIUM",
+                message=(
+                    f"The price requires a mature operating margin of "
+                    f"{implied_margin * 100:.1f}%, above {basis}. Reported as a "
+                    f"finding about how demanding the price is, not as an error: a "
+                    f"discounted cash flow cannot reach the multiples quality "
+                    f"companies trade at, so an extreme requirement usually means "
+                    f"the price is extreme."
+                ),
+                likely_causes=[],
             ))
 
     # -- 2. perpetual growth above the economy -----------------------------
@@ -198,19 +247,7 @@ def assess(valuation, history=None, *, country: str | None = None) -> list[Impla
     # -- 3. a gap too large to be a disagreement ---------------------------
     if price and fair_value and price > 0 and fair_value > 0:
         gap = abs(fair_value / price - 1)
-        if gap > _GAP_BLOCK:
-            findings.append(Implausibility(
-                check="valuation_plausibility",
-                severity="CRITICAL",
-                message=(
-                    f"Fair value of {fair_value:,.2f} differs from the market price of "
-                    f"{price:,.2f} by {gap * 100:.0f}%. A gap this wide on a listed, "
-                    f"traded company is far more often a modelling error than a "
-                    f"mispricing, and publishing it as a call would mislead."
-                ),
-                likely_causes=_diagnose(valuation, history),
-            ))
-        elif gap > _GAP_WARN:
+        if gap > _GAP_WARN:
             findings.append(Implausibility(
                 check="valuation_plausibility",
                 severity="MEDIUM",

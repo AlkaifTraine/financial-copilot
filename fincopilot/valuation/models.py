@@ -568,6 +568,9 @@ class Valuation:
     # The full reverse-DCF comparison: for each driver, what the price implies
     # vs our base case, shown side by side. Generalises market_implied_growth.
     priced_in: "PricedInComparison | None" = None
+    # What the price requires of each driver, judged against the company's own
+    # record. Carries the rating — see the `rating` property.
+    expectations: object | None = None
 
     warnings: list[str] = field(default_factory=list)
 
@@ -614,13 +617,29 @@ class Valuation:
 
     @property
     def rating(self) -> str:
-        """Rating derived from computed upside.
+        """Rating from what the price REQUIRES, not from the size of our gap to it.
 
-        Replaces the hard-coded "BUY" banner in the previous report generator,
-        which printed the same recommendation for every company regardless of
-        what the numbers said.
+        A DCF on free cash flow cannot reach the prices quality companies trade
+        at — the market pays about 44x free cash flow for Apple, which needs a
+        discount-rate-minus-growth spread near 2.25% against a defensible 5-7%.
+        Rating off the gap therefore returns SELL on almost every good company
+        in a richly-valued market: methodologically unsurprising, and useless to
+        a reader.
+
+        So the rating follows the reverse DCF instead. It asks what today's
+        price requires of each value driver and compares that against what the
+        company has actually delivered. "The price needs a 26% operating margin
+        and the best ever reported is 14.2%" survives the DCF's inability to
+        span the price, and is a claim a reader can check against the filings.
+
+        The gap still decides when there is nothing to compare against — a
+        company with too little history to judge expectations by.
         """
         from .. import config
+
+        expectations = getattr(self, "expectations", None)
+        if expectations is not None and getattr(expectations, "summary", ""):
+            return expectations.rating
 
         upside = self.upside
         if upside is None:
@@ -646,6 +665,7 @@ class Valuation:
             "blended": self.blended.to_dict() if self.blended else None,
             "assumptions": self.assumptions.to_dict(),
             "priced_in": self.priced_in.to_dict() if self.priced_in else None,
+            "expectations": self.expectations.to_dict() if self.expectations else None,
             "share_price": self.share_price,
             "fair_value": self.fair_value,
             "upside": self.upside,

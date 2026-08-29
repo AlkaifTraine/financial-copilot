@@ -337,6 +337,15 @@ def value_company(
             implied_year_one_growth=valuation.market_implied_growth,
         )
 
+        # Judge those requirements against what the company has actually
+        # delivered. This carries the rating: a DCF cannot reach the prices
+        # quality companies trade at, so rating off the gap returns SELL on
+        # nearly everything, while "the price needs a margin the company has
+        # never reported" is both checkable and specific to the business.
+        from .expectations import assess as assess_expectations
+
+        valuation.expectations = assess_expectations(valuation, history)
+
     # -- comparables ------------------------------------------------------
     valuation.comps = build_comps(
         company.ticker,
