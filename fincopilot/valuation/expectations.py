@@ -46,7 +46,22 @@ DEMANDING = "demanding"            # needs its best-ever performance, sustained
 UNPRECEDENTED = "unprecedented"    # beyond anything in its record
 UNREACHABLE = "unreachable"        # no level of this driver reaches the price
 
-_ORDER = [UNDEMANDING, ACHIEVABLE, DEMANDING, UNPRECEDENTED, UNREACHABLE]
+# Ordered cheapest to most expensive. UNREACHABLE is deliberately absent: it is
+# not a point on this scale.
+_ORDER = [UNDEMANDING, ACHIEVABLE, DEMANDING, UNPRECEDENTED]
+
+# "Unreachable" means no level of that driver alone reaches the price. That
+# sounds like the most bearish verdict possible and is not one at all — it is
+# the DCF failing to span the price on a single lever, which happens routinely
+# because a DCF cannot reach the multiples quality companies trade at. Reading
+# it as maximally expensive let one uninformative lever set the rating: Apple
+# was rated on "no operating margin justifies this price" while the lever that
+# did carry information said the price needs a 21% revenue CAGR against a
+# best-ever 33.3%, a far more interesting and far less damning fact.
+#
+# So an unreachable driver is reported and excluded from the verdict. If EVERY
+# driver is unreachable there is genuinely nothing to say, and the rating falls
+# back to the DCF gap.
 
 # How close to the demonstrated level still counts as "in line with it".
 _ACHIEVABLE_TOLERANCE = 0.15
@@ -199,7 +214,11 @@ def assess(valuation, history) -> Expectations:
     # Only drivers with something to compare against can carry the verdict. A
     # perpetual growth rate has no realised counterpart, so judging the market
     # by it would be judging it against nothing.
-    judged = [d for d in drivers if d.achieved_recent is not None or d.achieved_best is not None]
+    judged = [
+        d for d in drivers
+        if (d.achieved_recent is not None or d.achieved_best is not None)
+        and d.verdict != UNREACHABLE
+    ]
     if not judged:
         return Expectations(drivers=drivers, summary="")
 
@@ -208,12 +227,15 @@ def assess(valuation, history) -> Expectations:
     worst = max(judged, key=lambda d: _ORDER.index(d.verdict))
     verdict = worst.verdict
 
+    # "Demanding" is a HOLD, not a SELL. It means the price needs the company's
+    # best year to become its normal year — a real bar, and one plenty of good
+    # businesses clear. Only a requirement with no precedent in the company's
+    # own record is a SELL.
     rating = {
         UNDEMANDING: "BUY",
         ACHIEVABLE: "HOLD",
-        DEMANDING: "SELL",
+        DEMANDING: "HOLD",
         UNPRECEDENTED: "SELL",
-        UNREACHABLE: "SELL",
     }[verdict]
 
     summary = _summarise(worst, verdict)
