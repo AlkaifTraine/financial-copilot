@@ -261,3 +261,56 @@ class TestUnitSanityCheck:
 class TestConsolidatedSelection:
     def test_a_missing_file_returns_none_rather_than_raising(self):
         assert rp.extract("/no/such/file.pdf") is None
+
+
+class TestDiscoveryVersioning:
+    """A manifest written by older discovery logic must not be reused.
+
+    This is what kept Bikaji pinned to a stale document set after the scoring
+    fix: every file in the cached manifest still existed, so nothing looked
+    wrong, and the newly-preferred annual filing was simply never fetched.
+    """
+
+    def _company(self, tmp_path, monkeypatch):
+        from fincopilot import config
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+
+        class _C:
+            ticker = "TEST.NS"
+            slug = "test_ns"
+            def to_dict(self):
+                return {"ticker": self.ticker, "slug": self.slug}
+        return _C()
+
+    def test_a_current_manifest_is_reused(self, tmp_path, monkeypatch):
+        from fincopilot.ingest import registry
+        company = self._company(tmp_path, monkeypatch)
+        registry.write_manifest(company, [], [])
+        assert registry.read_manifest(company) is not None
+
+    def test_a_manifest_from_older_discovery_is_discarded(self, tmp_path, monkeypatch):
+        import json
+        from fincopilot.ingest import registry
+        company = self._company(tmp_path, monkeypatch)
+        registry.write_manifest(company, [], [])
+
+        path = registry.manifest_path(company)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["discovery_version"] = "v1"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert registry.read_manifest(company) is None
+
+    def test_an_unversioned_manifest_is_discarded(self, tmp_path, monkeypatch):
+        """Everything cached before versioning existed."""
+        import json
+        from fincopilot.ingest import registry
+        company = self._company(tmp_path, monkeypatch)
+        registry.write_manifest(company, [], [])
+
+        path = registry.manifest_path(company)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        del payload["discovery_version"]
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        assert registry.read_manifest(company) is None

@@ -22,6 +22,15 @@ from .validate import validate
 
 log = logging.getLogger(__name__)
 
+# Bump whenever discovery changes which documents get selected — new sources,
+# changed scoring, different type limits. A cached manifest written under an
+# older version is discarded and discovery re-runs, so a fix to selection
+# reaches companies that were already indexed instead of only new ones.
+#
+#   v2 (2026-08-28): annual results filings outrank same-year quarterlies,
+#                    so the audited full-year statements are actually fetched.
+DISCOVERY_VERSION = "v2"
+
 MANIFEST_NAME = "manifest.json"
 _DOWNLOAD_CHUNK = 64 * 1024
 _MAX_DOWNLOAD_BYTES = 120 * 1024 * 1024  # a 10-K is ~5-20MB; 120MB is a runaway
@@ -164,6 +173,7 @@ def write_manifest(
 
     payload = {
         "company": company.to_dict(),
+        "discovery_version": DISCOVERY_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "accepted": [d.to_dict() for d in accepted],
         "rejected": [d.to_dict() for d in rejected],
@@ -180,6 +190,24 @@ def read_manifest(company: Company) -> dict | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
+        return None
+
+    # A manifest written by older discovery logic is stale even though its
+    # files are all present, and nothing about it looks wrong — which is what
+    # makes it dangerous. When the scoring that chose "Financial-Results-31-03"
+    # over the September quarterly was fixed, every company already in the
+    # cache kept its pre-fix document set indefinitely: the newer filing was
+    # never downloaded, the audited annual figures were never found, and the
+    # company stayed pinned to whatever the old rules had picked. Re-running
+    # discovery costs a search; serving a silently outdated document set costs
+    # a year of reported results.
+    if payload.get("discovery_version") != DISCOVERY_VERSION:
+        log.info(
+            "manifest for %s was written by discovery %s (current %s); "
+            "re-running discovery",
+            company.ticker, payload.get("discovery_version", "unversioned"),
+            DISCOVERY_VERSION,
+        )
         return None
 
     payload["accepted"] = [SourceDocument.from_dict(d) for d in payload.get("accepted", [])]
