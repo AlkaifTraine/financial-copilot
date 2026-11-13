@@ -38,7 +38,7 @@ function Warn  ($m) { Write-Host "    $m"  -ForegroundColor Yellow }
 function Die   ($m) { Write-Host "`nFAILED: $m" -ForegroundColor Red; exit 1 }
 
 # Run gcloud and return its stdout, or $null on a non-zero exit.
-function Gc {
+function RunGcloud {
     $out = & gcloud @args
     if ($LASTEXITCODE -ne 0) { return $null }
     return $out
@@ -50,13 +50,13 @@ $gcloud = Get-Command gcloud -ErrorAction SilentlyContinue
 if (-not $gcloud) {
     Die "gcloud not found. Install it with:  winget install Google.CloudSDK`n        Then close and reopen PowerShell, and run:  gcloud auth login"
 }
-$account = Gc auth list --filter=status:ACTIVE --format="value(account)"
+$account = RunGcloud auth list --filter=status:ACTIVE --format="value(account)"
 if (-not $account) { Die "Not signed in. Run:  gcloud auth login" }
 Ok "Signed in as $account"
 
 # ---------------------------------------------------------------------------
 Say "Project: $ProjectId"
-$exists = Gc projects describe $ProjectId --format="value(projectId)"
+$exists = RunGcloud projects describe $ProjectId --format="value(projectId)"
 if ($exists) {
     Ok "Already exists."
 } else {
@@ -72,11 +72,11 @@ if ($exists) {
 Say "Billing"
 # A project with no billing account cannot create a VM, and the error it gives
 # when you try is unhelpfully generic. Resolve it here instead.
-$linked = Gc billing projects describe $ProjectId --format="value(billingEnabled)"
+$linked = RunGcloud billing projects describe $ProjectId --format="value(billingEnabled)"
 if ($linked -eq "True") {
     Ok "Already linked."
 } else {
-    $accounts = @(Gc billing accounts list --filter=open=true --format="value(name,displayName)")
+    $accounts = @(RunGcloud billing accounts list --filter=open=true --format="value(name,displayName)")
     if (-not $accounts -or $accounts.Count -eq 0) {
         Die "No open billing account. Create one at https://console.cloud.google.com/billing then re-run."
     }
@@ -104,13 +104,13 @@ Ok "Enabled."
 Say "Static IP: $AddressName ($Region)"
 # Reserved BEFORE the VM, so the address survives a VM restart. An ephemeral IP
 # changes on every stop/start, which would silently break fincopilot.site.
-$ip = Gc compute addresses describe $AddressName --region=$Region --format="value(address)"
+$ip = RunGcloud compute addresses describe $AddressName --region=$Region --format="value(address)"
 if ($ip) {
     Ok "Already reserved: $ip"
 } else {
     & gcloud compute addresses create $AddressName --region=$Region --project=$ProjectId | Out-Null
     if ($LASTEXITCODE -ne 0) { Die "Could not reserve the static IP." }
-    $ip = Gc compute addresses describe $AddressName --region=$Region --format="value(address)"
+    $ip = RunGcloud compute addresses describe $AddressName --region=$Region --format="value(address)"
     Ok "Reserved: $ip"
 }
 
@@ -120,7 +120,7 @@ Say "Firewall"
 # network tags the VM is given below.
 foreach ($r in @(@{n="allow-http"; p="tcp:80"; t="http-server"},
                  @{n="allow-https"; p="tcp:443"; t="https-server"})) {
-    $have = Gc compute firewall-rules describe $r.n --format="value(name)"
+    $have = RunGcloud compute firewall-rules describe $r.n --format="value(name)"
     if ($have) {
         Ok "$($r.n) already present."
     } else {
@@ -131,7 +131,7 @@ foreach ($r in @(@{n="allow-http"; p="tcp:80"; t="http-server"},
 
 # ---------------------------------------------------------------------------
 Say "VM: $InstanceName ($Zone)"
-$have = Gc compute instances describe $InstanceName --zone=$Zone --format="value(name)"
+$have = RunGcloud compute instances describe $InstanceName --zone=$Zone --format="value(name)"
 if ($have) {
     Ok "Already exists - leaving it alone."
 } else {
