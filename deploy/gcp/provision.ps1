@@ -60,9 +60,23 @@ $exists = RunGcloud projects describe $ProjectId --format="value(projectId)"
 if ($exists) {
     Ok "Already exists."
 } else {
-    & gcloud projects create $ProjectId --name="Financial Copilot" | Out-Null
+    # Output is deliberately not swallowed: gcloud's own error is the useful
+    # diagnostic here, and guessing at the cause sends people down the wrong path.
+    & gcloud projects create $ProjectId --name="Financial Copilot"
     if ($LASTEXITCODE -ne 0) {
-        Die "Could not create '$ProjectId'. Project IDs are globally unique - try again with -ProjectId $ProjectId-2"
+        Die @"
+Could not create '$ProjectId'. gcloud's error is printed above. The two causes
+that actually come up:
+
+  * 'Callers must accept Terms of Service'
+    This Google account has never completed Cloud onboarding. Open
+    https://console.cloud.google.com, sign in as the account above, accept the
+    Terms of Service and activate the free trial. Then re-run this script.
+
+  * 'already exists' / permission denied on create
+    Project IDs are globally unique and someone has taken this one. Re-run as:
+      .\deploy\gcp\provision.ps1 -ProjectId $ProjectId-2
+"@
     }
     Ok "Created."
 }
