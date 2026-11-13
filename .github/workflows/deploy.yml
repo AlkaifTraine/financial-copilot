@@ -1,14 +1,18 @@
-# CI/CD: on every push to main, run the tests, then deploy to the EC2 instance.
+# CI/CD: on every push to main, run the tests, then deploy to the GCE VM.
 #
-# The deploy step opens an SSH session to the instance, pulls the new code,
-# installs any changed dependencies, and restarts the service. Because the
-# secrets live in a file on the instance (not in the repo), a pull never
-# disturbs them and the app comes back up with the same configuration.
+# Same shape as the EC2 pipeline it replaces - the only differences are the
+# secret names and the fact that the login user on GCE is derived from your
+# Google account rather than being "ubuntu".
 #
 # Repository secrets required (Settings -> Secrets and variables -> Actions):
-#   EC2_HOST      public IP or DNS of the instance
-#   EC2_USER      ssh user, normally "ubuntu"
-#   EC2_SSH_KEY   contents of the instance's private key (.pem file)
+#   GCP_HOST      the VM's reserved static external IP
+#   GCP_USER      your GCE login name (e.g. romanempirealkaif)
+#   GCP_SSH_KEY   contents of the PRIVATE key whose public half is in the
+#                 VM's ssh-keys metadata
+#
+# NOTE: the deploy job does NOT use gcloud or a service account. It is a plain
+# SSH deploy, so there is no GCP credential sitting in GitHub - only a key that
+# can log into one VM.
 
 name: Deploy
 
@@ -40,8 +44,8 @@ jobs:
           pip install pytest
 
       - name: Run the valuation test suite
-        # These are pure, offline unit tests - no API key needed. A failure here
-        # blocks the deploy, so broken arithmetic never reaches the live site.
+        # Pure, offline unit tests - no API key needed. A failure here blocks
+        # the deploy, so broken arithmetic never reaches the live site.
         run: pytest tests/ -q
 
   deploy:
@@ -50,18 +54,16 @@ jobs:
     steps:
       - name: Deploy over SSH
         env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
+          SSH_KEY: ${{ secrets.GCP_SSH_KEY }}
+          GCP_HOST: ${{ secrets.GCP_HOST }}
+          GCP_USER: ${{ secrets.GCP_USER }}
         run: |
-          # Write the key to a file with correct permissions, and pin the host
-          # key on first contact so the connection is not silently MITM-able.
           mkdir -p ~/.ssh
           printf '%s' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -H "$GCP_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-          ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" bash -s <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key "$GCP_USER@$GCP_HOST" bash -s <<'REMOTE'
             set -euo pipefail
             cd ~/financial-copilot
             git fetch --all

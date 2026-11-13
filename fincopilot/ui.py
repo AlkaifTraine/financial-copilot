@@ -273,6 +273,36 @@ h1 {{ font-weight: 700; }}
 }}
 .fc-cohead-name {{ font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 1.7rem; color: var(--ink); letter-spacing: -.02em; }}
 .fc-cohead-meta {{ color: var(--ink-2); font-size: .9rem; margin-top: 3px; }}
+/* ---- Platform chrome -------------------------------------------------- */
+/* The app ships its own header, sidebar brand and typography, so Streamlit's
+   default chrome is redundant furniture that makes a finished product read as
+   a framework demo. toolbarMode="minimal" in .streamlit/config.toml removes
+   the menu; this removes what is left of the frame. */
+
+/* The thin animated gradient bar pinned to the very top of the viewport. */
+[data-testid="stDecoration"] {{ display: none !important; }}
+
+/* The translucent header strip and anything parked in it. */
+header[data-testid="stHeader"] {{
+  display: none !important;
+  height: 0 !important;
+}}
+
+#MainMenu {{ visibility: hidden !important; }}
+[data-testid="stToolbar"] {{ display: none !important; }}
+[data-testid="stStatusWidget"] {{ display: none !important; }}
+footer {{ visibility: hidden !important; height: 0 !important; }}
+
+/* With the header gone the first element sits flush against the top edge;
+   restore the breathing room the header used to provide. */
+.block-container {{ padding-top: 2.6rem !important; }}
+
+/* Streamlit renders anchor links beside every markdown heading on hover.
+   In a research document they read as an editing affordance that does not
+   belong to the reader. */
+.stMarkdown h1 > a, .stMarkdown h2 > a,
+.stMarkdown h3 > a, .stMarkdown h4 > a {{ display: none !important; }}
+
 </style>
 """
 

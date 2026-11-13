@@ -14,3 +14,14 @@ enableXsrfProtection = true
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# Strips the hamburger menu, the "Deploy" button and the developer toolbar from
+# the top-right corner - the single most recognisable piece of Streamlit chrome.
+# This is an official Streamlit setting, not a hack.
+toolbarMode = "minimal"
+
+# A public demo must never show a visitor a Python traceback. Errors are logged
+# server-side and the visitor sees a clean message instead. A recruiter meeting
+# a raw stack trace is a worse outcome than a vague error.
+showErrorDetails = "none"
