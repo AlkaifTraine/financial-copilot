@@ -69,6 +69,11 @@ jobs:
             git fetch --all
             git reset --hard origin/main
             ./venv/bin/pip install -q -r requirements.txt
+            # pip may have reinstalled streamlit, which restores its own
+            # index.html - and with it the "Streamlit" tab title and link
+            # preview. Re-apply ours. Non-fatal: a deploy should not fail over
+            # a page title.
+            bash deploy/gcp/brand-static-shell.sh "Financial Copilot" || true
             sudo systemctl restart financial-copilot
             echo "Deployed $(git rev-parse --short HEAD) at $(date -u)"
           REMOTE
