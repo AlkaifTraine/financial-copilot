@@ -4,8 +4,8 @@
 
 Type a company name. The system finds its SEC filings, indexes them with an advanced retrieval pipeline, pulls its audited financials, builds a discounted-cash-flow valuation where *every assumption is stated and justified*, and generates a polished research report — every figure traceable to the page of the filing it came from.
 
-🔗 **Live demo: [fincopilot.duckdns.org](https://fincopilot.duckdns.org/)**
-🛠️ Built with Streamlit · OpenAI · FAISS · SEC EDGAR · deployed on AWS EC2 (nginx/Caddy + systemd) with a GitHub Actions CI/CD pipeline
+🔗 **Live demo: [fincopilot.site](https://fincopilot.site/)**
+🛠️ Built with Streamlit · OpenAI · FAISS · SEC EDGAR · deployed on Google Compute Engine (Caddy + systemd) with a GitHub Actions CI/CD pipeline
 
 ![Report cover](docs/images/report_cover.png)
 
@@ -219,7 +219,7 @@ What ships alongside the report is a **reliability scorecard** (`report/reliabil
 
 ## Tech stack
 
-**Python** · **Streamlit** (UI) · **LiteLLM Router** (provider fallback + load balancing) · **OpenAI** (`gpt-4.1` for analysis and prose, `gpt-4.1-mini` for mechanical calls, `text-embedding-3-small` for embeddings) · **Gemini** (`gemini-2.5-pro` / `gemini-2.5-flash`, fallback tier) · **SQLite** (report store) · **FAISS** (dense vectors) · **rank-bm25** (sparse) · **PyMuPDF** + **BeautifulSoup** (parsing) · **SEC EDGAR** submissions & XBRL APIs · **NSE** corporate-filings & Ind-AS XBRL · **yfinance** (live market data only) · **NumPy/pandas** (valuation) · **Jinja2** + **ReportLab** (report rendering) · **matplotlib** (charts) · **pytest** (tests) · **AWS EC2** + **nginx** + **systemd** + **GitHub Actions** (deployment).
+**Python** · **Streamlit** (UI) · **LiteLLM Router** (provider fallback + load balancing) · **OpenAI** (`gpt-4.1` for analysis and prose, `gpt-4.1-mini` for mechanical calls, `text-embedding-3-small` for embeddings) · **Gemini** (`gemini-2.5-pro` / `gemini-2.5-flash`, fallback tier) · **SQLite** (report store) · **FAISS** (dense vectors) · **rank-bm25** (sparse) · **PyMuPDF** + **BeautifulSoup** (parsing) · **SEC EDGAR** submissions & XBRL APIs · **NSE** corporate-filings & Ind-AS XBRL · **yfinance** (live market data only) · **NumPy/pandas** (valuation) · **Jinja2** + **ReportLab** (report rendering) · **matplotlib** (charts) · **pytest** (tests) · **Google Compute Engine** + **Caddy** + **systemd** + **GitHub Actions** (deployment; the original **AWS EC2** + **nginx** runbook is kept in [`deploy/`](deploy/)).
 
 The two-model blend is explicit and tunable in one place (`config.WRITER_MODEL` / `config.FAST_MODEL`): reasoning-heavy calls — thesis, narrative sections, risk quantification, the assumption critique — go to `gpt-4.1`; extraction and classification go to `gpt-4.1-mini`. `llm.get_usage()` tracks tokens per process, which puts a full report at roughly $0.15.
 
@@ -251,17 +251,42 @@ The test suite is offline and deterministic: DCF arithmetic, scenarios, the blen
 
 ---
 
-## Deployment (AWS EC2 + CI/CD)
+## Deployment (GCE + CI/CD)
 
-The live demo runs on an AWS EC2 instance behind nginx, kept alive by systemd. Every push to `main` triggers a **GitHub Actions** pipeline that runs the test suite and, if it passes, SSHes to the instance, pulls, and restarts the service — so the live link tracks `main` automatically. Full runbook in [`deploy/`](deploy/).
+Live at [fincopilot.site](https://fincopilot.site/), on a Compute Engine
+instance behind Caddy, kept alive by systemd. Every push to `main` triggers a
+**GitHub Actions** pipeline that runs the test suite and, if it passes, SSHes
+to the instance, pulls, and restarts the service — so the live link tracks
+`main` automatically.
 
 ```
 push to main → GitHub Actions → pytest → SSH deploy → systemctl restart
 ```
 
-The public demo runs with `DEMO_MODE=1`, which enables per-session and global daily rate limits so its OpenAI usage stays bounded.
+It ran on AWS EC2 first, and the move is worth a sentence because the reason
+was cost, not architecture. The AWS free tier lapsed, and an always-on instance
+is a standing monthly bill for a portfolio demo. GCE's e2-micro is free
+indefinitely in three US regions, so the app moved to one.
 
----
+The port was almost entirely mechanical — the same Ubuntu, the same venv, the
+same systemd unit, the same Caddy/Let's Encrypt setup. Two things did not
+transfer, and both are worth knowing if you ever do this:
+
+- **The login user is not `ubuntu`.** GCE derives it from the Google account,
+  so every hardcoded `/home/ubuntu` path and the unit's `User=` had to become
+  generated rather than copied. This is the single most common way a
+  lift-and-shift of an EC2 runbook fails.
+- **1 GB of RAM and no swap.** GCE images ship without a swap file, and parsing
+  a 200-page 10-K peaks above 1 GB. Without 2 GB of swap the process is
+  OOM-killed on the first large filing.
+
+Both runbooks are in the repository: [`deploy/`](deploy/) for EC2,
+[`deploy/gcp/`](deploy/gcp/) for GCE — the latter with a one-command
+provisioning script and a full runbook.
+
+The public deployment runs with `DEMO_MODE=1`, which enables per-session and
+global daily rate limits, and a `MAX_USD_PER_PROCESS` ceiling, so the demo's
+API usage stays bounded regardless of who finds it.
 
 ## Limitations
 

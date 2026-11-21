@@ -1,0 +1,15 @@
+# Shell scripts in this repository are deployment artefacts: they are checked
+# out on a Linux VM and executed. A CRLF line ending there fails with
+# `$'\r': command not found`, which points at nothing useful.
+#
+# core.autocrlf on a Windows clone would hand them back with CRLF, so pin them.
+*.sh text eol=lf
+
+# Same reasoning: read by Linux tooling, not by an editor on Windows.
+*.service text eol=lf
+*.conf    text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+
+# PowerShell is the mirror case - it runs on Windows.
+*.ps1 text eol=crlf
