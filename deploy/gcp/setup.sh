@@ -76,6 +76,12 @@ EOF
     chmod 600 "$ENV_FILE"
 fi
 
+# --- Static shell branding --------------------------------------------------
+# page_title only applies once the JS bundle loads. Before that the tab, and
+# every link preview, show Streamlit's shipped title. Patch the vendored shell.
+echo "==> Branding the static shell"
+APP_DIR="$APP_DIR" bash "$APP_DIR/deploy/gcp/brand-static-shell.sh" "Financial Copilot" ||     echo "    (skipped - non-fatal)"
+
 # --- systemd service --------------------------------------------------------
 # Generated rather than copied, because User= and the paths depend on $APP_USER.
 echo "==> Installing systemd service for user $APP_USER"
